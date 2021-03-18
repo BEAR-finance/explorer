@@ -6,7 +6,7 @@ export default {
   title: "Explorer/loading/LoadingMessage",
   args: {
     image: "images/decentraland-connect/loadingtips/Mana.png",
-    message: `MANA is Decentraland’s virtual currency. Use it to buy LAND and other premium items, vote on key policies and pay platform fees.`,
+    message: `USD is Bearland’s virtual currency. Use it to buy LAND and other premium items, vote on key policies and pay platform fees.`,
     subMessage: "Loading scenes...",
     showWalletPrompt: false,
   },

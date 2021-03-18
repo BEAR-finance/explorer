@@ -18,11 +18,11 @@ export type LoadingTip = {
 
 export const loadingTips: Array<LoadingTip> = [
   {
-    text: `MANA is Decentraland’s virtual currency. Use it to buy LAND and other premium items, vote on key policies and pay platform fees.`,
+    text: `USD is Bearland’s virtual currency. Use it to buy LAND and other premium items, vote on key policies and pay platform fees.`,
     image: imgMana,
   },
   {
-    text: `Buy and sell LAND, Estates, Avatar wearables and names in the Decentraland Marketplace: stocking the very best digital goods and paraphernalia backed by the ethereum blockchain.`,
+    text: `Buy and sell LAND, Estates, Avatar wearables and names in the Bearland Marketplace: stocking the very best digital goods and paraphernalia backed by the ethereum blockchain.`,
     image: imgMarketplace,
   },
   {
@@ -30,7 +30,7 @@ export const loadingTips: Array<LoadingTip> = [
     image: imgLand,
   },
   {
-    text: `Decentraland is made up of over 90,000 LANDs: virtual spaces backed by cryptographic tokens. Only LANDowners can determine the content that sits on their LAND.`,
+    text: `Bearland is made up of over 90,000 LANDs: virtual spaces backed by cryptographic tokens. Only LANDowners can determine the content that sits on their LAND.`,
     image: imgLandImg,
   },
   {
@@ -38,11 +38,11 @@ export const loadingTips: Array<LoadingTip> = [
     image: imgWearables,
   },
   {
-    text: `Decentraland is the first fully decentralized virtual world. By voting through the DAO  ('Decentralized Autonomous Organization'), you are in control of the policies created to determine how the world behaves.`,
+    text: `Bearland is the first fully decentralized virtual world. By voting through the DAO  ('Decentralized Autonomous Organization'), you are in control of the policies created to determine how the world behaves.`,
     image: imgDAO,
   },
   {
-    text: `Genesis Plaza is built and maintained by the Decentraland Foundation but is still in many ways a community project. Around here you'll find several teleports that can take you directly to special scenes marked as points of interest.`,
+    text: `Genesis Plaza is built and maintained by the Bearland Foundation but is still in many ways a community project. Around here you'll find several teleports that can take you directly to special scenes marked as points of interest.`,
     image: imgGenesisPlazaImg,
   },
 ];

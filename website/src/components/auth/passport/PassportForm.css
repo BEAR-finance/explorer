@@ -56,11 +56,11 @@
 }
 
 .passportForm form .inputGroup input.hasError {
-  border-color: #ff2d55;
+  border-color: #1DB954;
 }
 
 .passportForm form .inputGroup em.hint.hasError {
-  color: #ff2d55;
+  color: #1DB954;
   opacity: 1;
 }
 
@@ -108,12 +108,12 @@
 .passportForm form button.btnSubmit {
   cursor: pointer;
   color: white;
-  background: #ff2d55;
+  background: #1DB954;
   width: 196px;
   height: 46px;
   border: 0;
   border-radius: 12px;
-  box-shadow: 0 3px 0 #cb2242;
+  box-shadow: 0 3px 0 #1DB400;
   font-style: normal;
   font-weight: 600;
   font-size: 17px;

@@ -29,7 +29,7 @@ export const BeginnersGuide: React.FC<React.HTMLAttributes<HTMLDivElement>> = (
             <li>
               <p>Can I log in from multiple computers?</p>
               <p>
-                Yes, you can run Decentraland from multiple computers as long as
+                Yes, you can run Bearland from multiple computers as long as
                 you have your digital wallet installed on each machine.
               </p>
             </li>
@@ -50,13 +50,13 @@ export const BeginnersGuide: React.FC<React.HTMLAttributes<HTMLDivElement>> = (
           }
         >
           <p>
-            If you want to fully enjoy the Decentraland experience, we recommend
+            If you want to fully enjoy the Bearland experience, we recommend
             you get yourself a digital wallet. Digital wallets work as your
             personal account, keeping all your digital assets (such as names,
             collectibles, LANDs) and in-world progress safe.
           </p>
           <p>
-            If you choose to experience Decentraland Explorer without a wallet,
+            If you choose to experience Bearland Explorer without a wallet,
             the information will be only be stored locally: you will be able to
             walk around, customize your Avatar and chat with others in-world,
             but you won’t have the chance to receive daily rewards, participate
@@ -79,15 +79,15 @@ export const BeginnersGuide: React.FC<React.HTMLAttributes<HTMLDivElement>> = (
         <Accordion
           title={
             <h3>
-              What is <b>MANA</b>?
+              What is <b>USD</b>?
             </h3>
           }
         >
           <p>
-            MANA is Decentraland’s fungible, ERC20 cryptocurrency token. MANA is
+            USD is Bearland’s fungible, ERC20 cryptocurrency token. USD is
             burned, or spent, in exchange for LAND parcels. For a current
             summary of critical stats like total and circulating supply, please
-            visit our MANA Token Information transparency dashboard. See the{" "}
+            visit our USD Token Information transparency dashboard. See the{" "}
             <a
               href="https://docs.decentraland.org/decentraland/glossary/"
               target="_blank"
@@ -123,7 +123,7 @@ export const BeginnersGuide: React.FC<React.HTMLAttributes<HTMLDivElement>> = (
         >
           <p>
             The Marketplace is the go-to place to trade and manage all your
-            Decentraland on-chain assets.
+            Bearland on-chain assets.
           </p>
           <p>
             Access the Marketplace at{" "}
@@ -141,7 +141,7 @@ export const BeginnersGuide: React.FC<React.HTMLAttributes<HTMLDivElement>> = (
             <li>
               <p>
                 Sell parcels and Estates of LAND, wearables and unique names.
-                Set your own price in MANA and an expiration date for the offer.
+                Set your own price in USD and an expiration date for the offer.
               </p>
             </li>
             <li>

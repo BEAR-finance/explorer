@@ -40,7 +40,7 @@ export const MainIsologotipo = (props: React.SVGProps<SVGSVGElement>) => (
       fillRule="evenodd"
       clipRule="evenodd"
       d="M10.3043 45.3081C14.4779 48.4456 19.6762 50.3081 25.2993 50.3081C30.9225 50.3081 36.1208 48.4456 40.2944 45.3081H10.3043Z"
-      fill="#FF2D55"
+      fill="#1DB954"
     />
     <path
       fillRule="evenodd"
@@ -119,7 +119,7 @@ export const MainIsologotipo = (props: React.SVGProps<SVGSVGElement>) => (
         y2="25.2965"
         gradientUnits="userSpaceOnUse"
       >
-        <stop stopColor="#FF2D55" />
+        <stop stopColor="#1DB954" />
         <stop offset="1" stopColor="#FFBC5B" />
       </linearGradient>
       <linearGradient
@@ -131,7 +131,7 @@ export const MainIsologotipo = (props: React.SVGProps<SVGSVGElement>) => (
         gradientUnits="userSpaceOnUse"
       >
         <stop stopColor="#A524B3" />
-        <stop offset="1" stopColor="#FF2D55" />
+        <stop offset="1" stopColor="#1DB954" />
       </linearGradient>
       <linearGradient
         id="paint2_linear"
@@ -142,7 +142,7 @@ export const MainIsologotipo = (props: React.SVGProps<SVGSVGElement>) => (
         gradientUnits="userSpaceOnUse"
       >
         <stop stopColor="#A524B3" />
-        <stop offset="1" stopColor="#FF2D55" />
+        <stop offset="1" stopColor="#1DB954" />
       </linearGradient>
     </defs>
   </svg>

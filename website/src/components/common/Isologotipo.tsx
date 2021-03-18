@@ -4,16 +4,16 @@ export const Isologotipo = (props: React.SVGProps<SVGSVGElement>) => (
   <svg width="179" height="35" viewBox="0 0 179 35" {...props} className={'dcl-isologotipo ' + (props.className || '')} fill="none" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <linearGradient id="paint0_linear" x1="16.863" y1="6.98716" x2="6.9927" y2="16.8607" gradientUnits="userSpaceOnUse">
-        <stop stopColor="#FF2D55" />
+        <stop stopColor="#1DB954" />
         <stop offset="1" stopColor="#FFBC5B" />
       </linearGradient>
       <linearGradient id="paint1_linear" x1="11.9437" y1="10.9645" x2="11.9437" y2="23.6159" gradientUnits="userSpaceOnUse">
         <stop stopColor="#A524B3" />
-        <stop offset="1" stopColor="#FF2D55" />
+        <stop offset="1" stopColor="#1DB954" />
       </linearGradient>
       <linearGradient id="paint2_linear" x1="22.6187" y1="17.7117" x2="22.6187" y2="26.9893" gradientUnits="userSpaceOnUse">
         <stop stopColor="#A524B3" />
-        <stop offset="1" stopColor="#FF2D55" />
+        <stop offset="1" stopColor="#1DB954" />
       </linearGradient>
     </defs>
     <g>
@@ -23,7 +23,7 @@ export const Isologotipo = (props: React.SVGProps<SVGSVGElement>) => (
       <path fillRule="evenodd" clipRule="evenodd" d="M16.863 33.737C26.1761 33.737 33.7259 26.1847 33.7259 16.8685C33.7259 7.55229 26.1761 0 16.863 0C7.5498 0 0 7.55229 0 16.8685C0 26.1847 7.5498 33.737 16.863 33.737Z" fill="url(#paint0_linear)" />
       <path fillRule="evenodd" clipRule="evenodd" d="M11.9473 10.9645V23.6159H22.4865L11.9473 10.9645Z" fill="url(#paint1_linear)" />
       <path fillRule="evenodd" clipRule="evenodd" d="M1.40771 23.6161H11.947V10.9647L1.40771 23.6161Z" fill="white" />
-      <path fillRule="evenodd" clipRule="evenodd" d="M6.74487 30.3634C9.56098 32.4804 13.0685 33.7371 16.8626 33.7371C20.6568 33.7371 24.1643 32.4804 26.9804 30.3634H6.74487Z" fill="#FF2D55" />
+      <path fillRule="evenodd" clipRule="evenodd" d="M6.74487 30.3634C9.56098 32.4804 13.0685 33.7371 16.8626 33.7371C20.6568 33.7371 24.1643 32.4804 26.9804 30.3634H6.74487Z" fill="#1DB954" />
       <path fillRule="evenodd" clipRule="evenodd" d="M3.37207 26.9896C4.33326 28.2632 5.4715 29.4018 6.74466 30.3633H26.9802C28.2533 29.4018 29.3916 28.2632 30.3528 26.9896H3.37207Z" fill="#FC9965" />
       <path fillRule="evenodd" clipRule="evenodd" d="M22.6212 23.6161H1.40771C1.93046 24.8222 2.59655 25.9524 3.37224 26.9898H22.6297V23.6161H22.6212Z" fill="#FFBC5B" />
       <path fillRule="evenodd" clipRule="evenodd" d="M22.6213 17.7117V26.9893H30.353L22.6213 17.7117Z" fill="url(#paint2_linear)" />

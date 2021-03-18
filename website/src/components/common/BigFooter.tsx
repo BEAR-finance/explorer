@@ -56,7 +56,7 @@ export const BigFooter = () => (
       </div>
     </Container>
     <Container>
-      <p className="copyright">© {year} Decentraland</p>
+      <p className="copyright">© {year} Bearland</p>
     </Container>
   </footer>
 );

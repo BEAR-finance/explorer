@@ -168,7 +168,7 @@ export const TermsOfServices: React.FC<TermsOfServicesProps> = (props) => {
             or allegations, to respond to court orders or official requests, to
             protect the security or integrity of the Site or the Tools, and to
             protect the rights, property, or safety of the Foundation, the
-            Decentraland community of users and LAND owners, or others.
+            Bearland community of users and LAND owners, or others.
           </p>
           <p>
             4.6 In the event that the Foundation is involved in a merger,

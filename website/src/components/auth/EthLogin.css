@@ -84,8 +84,8 @@
   line-height: 30px;
   text-align: center;
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
-  box-shadow: 0 5px 0 #cb2242;
-  background-color: #ff2d55;
+  box-shadow: 0 5px 0 #1DB400;
+  background-color: #1DB954;
   mix-blend-mode: normal;
   outline: 0;
   transition: transform 0.1s ease;
@@ -96,8 +96,8 @@
 }
 
 .eth-login-confirm-button:active {
-  background-color: #cb2242;
-  box-shadow: 0 0 0 #cb2242;
+  background-color: #1DB400;
+  box-shadow: 0 0 0 #1DB400;
   transform: translateY(0);
 }
 
