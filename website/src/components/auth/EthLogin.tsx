@@ -35,11 +35,12 @@ export const EthLogin: React.FC<EthLoginProps> = (props) => {
         {isLoading && <Spinner />}
         {!isLoading && (
           <React.Fragment>
-            <button className="eth-login-confirm-button" onClick={handlePlay}>
+            <button disabled className="eth-login-confirm-button" onClick={handlePlay}>
               Play
             </button>
             {!hasWallet && (
               <button
+                disabled
                 className="eth-login-guest-button"
                 onClick={handlePlayAsGuest}
               >

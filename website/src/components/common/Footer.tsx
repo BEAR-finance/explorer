@@ -8,7 +8,7 @@ import twitter from "../../images/footer/Twitter.png";
 export const Footer: React.FC = () => (
   <footer className="footer-bar">
     <div className="footer-bar-content">
-      <a href="https://discord.gg/k5ydeZp" target="about:blank">
+      <a href="https://t.me/bearstalk" target="about:blank">
         <img alt="" src={discord} />
       </a>
       <a href="https://bearsfinance.medium.com/" target="about:blank">
