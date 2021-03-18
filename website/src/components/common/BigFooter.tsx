@@ -19,10 +19,10 @@ export const BigFooter = () => (
         <div>
           <a
             className="big-footer-button"
-            href="https://discord.gg/k5ydeZp"
+            href="https://t.me/bearstalk"
             target="about:blank"
           >
-            <Discord /> Join our Discord
+            <Discord /> Join our Telegram
           </a>
         </div>
       </div>
@@ -33,21 +33,21 @@ export const BigFooter = () => (
         <div>
           <a
             className="big-footer-icon"
-            href="https://www.reddit.com/r/decentraland/"
+            href="https://bearsfinance.medium.com/"
             target="about:blank"
           >
             <Reddit />
           </a>
           <a
             className="big-footer-icon"
-            href="http://github.com/decentraland"
+            href="http://github.com/bear-finance"
             target="about:blank"
           >
             <Github />
           </a>
           <a
             className="big-footer-icon"
-            href="https://twitter.com/decentraland"
+            href="https://twitter.com/bears_finance"
             target="about:blank"
           >
             <Twitter />

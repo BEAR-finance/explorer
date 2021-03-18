@@ -32,7 +32,7 @@ export const ErrorNoMobile: React.FC = () => (
           <div
             className="signup"
             onClick={() => {
-              window.location.href = "https://decentraland.org";
+              window.location.href = "https://bears.finance";
             }}
           >
             Learn more about decentraland

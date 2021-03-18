@@ -6,7 +6,7 @@ export default {
   title: "Explorer/base/Audio",
   args: {
     play: true,
-    track: "https://play.decentraland.org/tone4.mp3",
+    track: "https://play.bears.finance/tone4.mp3",
   },
   component: Audio,
 } as Meta;

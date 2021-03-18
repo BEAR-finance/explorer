@@ -67,7 +67,7 @@ export const BeginnersGuide: React.FC<React.HTMLAttributes<HTMLDivElement>> = (
             If this is the first time you’re hearing about digital wallets, we
             recommend reading{" "}
             <a
-              href="https://docs.decentraland.org/examples/get-a-wallet/"
+              href="https://docs.bears.finance/examples/get-a-wallet/"
               target="_blank"
               rel="noreferrer"
             >
@@ -89,7 +89,7 @@ export const BeginnersGuide: React.FC<React.HTMLAttributes<HTMLDivElement>> = (
             summary of critical stats like total and circulating supply, please
             visit our USD Token Information transparency dashboard. See the{" "}
             <a
-              href="https://docs.decentraland.org/decentraland/glossary/"
+              href="https://docs.bears.finance/decentraland/glossary/"
               target="_blank"
               rel="noreferrer"
             >
@@ -128,11 +128,11 @@ export const BeginnersGuide: React.FC<React.HTMLAttributes<HTMLDivElement>> = (
           <p>
             Access the Marketplace at{" "}
             <a
-              href="https://market.decentraland.org"
+              href="https://market.bears.finance"
               target="_blank"
               rel="noreferrer"
             >
-              market.decentraland.org
+              market.bears.finance
             </a>
             .
           </p>

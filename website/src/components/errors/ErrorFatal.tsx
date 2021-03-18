@@ -18,7 +18,7 @@ export const ErrorFatal: React.FC = () => (
           <br />
           Loading should not take any longer than 2-3 minutes.<br />
           If you seem to be stuck, make sure hardware acceleration is on.<br />
-          <a href="https://docs.decentraland.org/decentraland/hardware-acceleration/">LEARN MORE</a>
+          <a href="https://docs.bears.finance/decentraland/hardware-acceleration/">LEARN MORE</a>
         </div>
         <div className="cta">
           <button

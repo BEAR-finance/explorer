@@ -70,7 +70,7 @@ export const TermsOfServices: React.FC<TermsOfServicesProps> = (props) => {
           </p>
           <p>
             1.4 Any questions, comments or complaints that you might have should
-            be emailed to privacy@decentraland.org.
+            be emailed to privacy@bears.finance.
           </p>
           <p>2. Information Collected in the Site and the Tools</p>
           <p>
@@ -250,7 +250,7 @@ export const TermsOfServices: React.FC<TermsOfServicesProps> = (props) => {
           <p>
             9.3. If you wish to investigate the exercising of any of these
             rights, please write to us at the following address:
-            privacy@decentraland.org.
+            privacy@bears.finance.
           </p>
           <p>10. Changes and Updates</p>
           <p>
@@ -260,7 +260,7 @@ export const TermsOfServices: React.FC<TermsOfServicesProps> = (props) => {
             DCL Client constitutes your agreement to this Privacy Policy and any
             future revisions.
           </p>
-          <p>10.2 Contact Information: privacy@decentraland.org.</p>
+          <p>10.2 Contact Information: privacy@bears.finance.</p>
         </div>
         <div className="actions">
           {props.loading ? (

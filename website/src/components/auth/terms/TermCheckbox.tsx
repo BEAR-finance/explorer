@@ -18,7 +18,7 @@ export const TermCheckbox: React.FC<TermCheckboxProps> = (props) => (
     <label htmlFor="agree-check" className="eth-login-tos-label">
       I am of legal age and I have read and agree to the{" "}
       <a
-        href="https://decentraland.org/terms"
+        href="https://bears.finance/terms"
         target="_blank"
         rel="noopener noreferrer"
       >
@@ -26,7 +26,7 @@ export const TermCheckbox: React.FC<TermCheckboxProps> = (props) => (
       </a>{" "}
       and{" "}
       <a
-        href="https://decentraland.org/privacy"
+        href="https://bears.finance/privacy"
         target="_blank"
         rel="noopener noreferrer"
       >
