@@ -1,13 +1,13 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
-using UnityEngine.UI;
 
 public class CatalogGroupListView : ListView<Dictionary<string, List<CatalogItem>>>
 {
     public Canvas generalCanvas;
     public CatalogAssetGroupAdapter categoryItemAdapterPrefab;
+    public DynamicScrollSensitivity dynamicScrollSensitivity;
+
     public System.Action<CatalogItem> OnCatalogItemClicked;
     public System.Action<CatalogItem, CatalogItemAdapter> OnCatalogItemFavorite;
 
@@ -21,7 +21,8 @@ public class CatalogGroupListView : ListView<Dictionary<string, List<CatalogItem
     {
         base.AddAdapters();
 
-        if (contentList == null) return;
+        if (contentList == null)
+            return;
 
         foreach (Dictionary<string, List<CatalogItem>> assetPackGroups in contentList)
         {
@@ -32,10 +33,13 @@ public class CatalogGroupListView : ListView<Dictionary<string, List<CatalogItem
                 AddAdapter(adapter);
             }
         }
+
+        if (dynamicScrollSensitivity != null)
+            dynamicScrollSensitivity.RecalculateSensitivity();
     }
 
     public void AddAdapter(CatalogAssetGroupAdapter adapter)
-    {   
+    {
         adapter.OnCatalogItemClicked += CatalogItemSelected;
         adapter.OnCatalogItemFavorite += CatalogItemFavorite;
         adapter.OnAdapterStartDragging += AdapterStartDragging;
@@ -43,10 +47,7 @@ public class CatalogGroupListView : ListView<Dictionary<string, List<CatalogItem
         adapter.OnAdapterEndDrag += OnEndDrag;
     }
 
-    private void OnDrag(PointerEventData data)
-    {
-        draggedObject.transform.position = data.position;
-    }
+    private void OnDrag(PointerEventData data) { draggedObject.transform.position = data.position; }
 
     private void AdapterStartDragging(CatalogItem catalogItemClicked, CatalogItemAdapter adapter, BaseEventData data)
     {
@@ -71,20 +72,10 @@ public class CatalogGroupListView : ListView<Dictionary<string, List<CatalogItem
         Destroy(draggedObject);
     }
 
-    public CatalogItemAdapter GetLastCatalogItemDragged()
-    {
-        return catalogItemAdapterDragged;
-    }
+    public CatalogItemAdapter GetLastCatalogItemDragged() { return catalogItemAdapterDragged; }
 
-    private void CatalogItemSelected(CatalogItem sceneObject)
-    {
-        OnCatalogItemClicked?.Invoke(sceneObject);
-    }
+    private void CatalogItemSelected(CatalogItem sceneObject) { OnCatalogItemClicked?.Invoke(sceneObject); }
 
-    private void CatalogItemFavorite(CatalogItem sceneObject,CatalogItemAdapter adapter)
-    {
-        OnCatalogItemFavorite?.Invoke(sceneObject, adapter);
-    }
-
+    private void CatalogItemFavorite(CatalogItem sceneObject, CatalogItemAdapter adapter) { OnCatalogItemFavorite?.Invoke(sceneObject, adapter); }
 
 }
