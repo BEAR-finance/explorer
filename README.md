@@ -1,6 +1,6 @@
-# Decentraland Explorer
+# Bearland Explorer
 
-This is the [decentraland explorer](https://play.decentraland.org) official repository.
+This is the [bearland explorer](https://play.bears.finance) official repository.
 
 This repository covers mainly the Kernel component of the explorer product. 
 
