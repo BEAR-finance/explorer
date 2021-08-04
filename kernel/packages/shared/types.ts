@@ -2,7 +2,7 @@ import type { Vector3Component, Vector2Component } from '../atomicHelpers/landHe
 import type { QueryType } from 'decentraland-ecs/src/decentraland/PhysicsCast'
 
 export { Avatar, Profile, ColorString } from './profiles/types'
-export { WearableId, Wearable } from './catalogs/types'
+export { WearableId, Wearable, WearableV2 } from './catalogs/types'
 
 export type MappingsResponse = {
   parcel_id: string
@@ -209,6 +209,17 @@ export type ScenePolicy = {
 export type SceneSource = {
   origin?: string
   projectId?: string
+  version?: number
+  rotation?: SceneSourcePlacement['rotation']
+  point?: SceneSourcePlacement['point']
+  layout?: SceneSourcePlacement['layout']
+  isEmpty?: boolean
+}
+
+export type SceneSourcePlacement = {
+  rotation: 'north' | 'east' | 'south' | 'west'
+  point: { x: number; y: number }
+  layout: { cols: number; rows: number }
 }
 
 /// https://github.com/decentraland/proposals/blob/master/dsp/0020.mediawiki
@@ -440,13 +451,19 @@ export enum HUDElementID {
   CONTROLS_HUD = 18,
   EXPLORE_HUD = 19,
   HELP_AND_SUPPORT_HUD = 20,
+
+  /** @deprecated */
   EMAIL_PROMPT = 21,
+
   USERS_AROUND_LIST_HUD = 22,
   GRAPHIC_CARD_WARNING = 23,
   BUILD_MODE = 24,
   QUESTS_PANEL = 26,
   QUESTS_TRACKER = 27,
-  QUESTS_NOTIFICATIONS = 28
+  BUILDER_PROJECTS_PANEL = 28,
+  SIGNUP = 29,
+  LOADING_HUD = 30,
+  AVATAR_NAMES = 31
 }
 
 export type HUDConfiguration = {
@@ -560,13 +577,16 @@ export type KernelConfigForRenderer = {
     nameValidCharacterRegex: string
   }
   features: {
-    enableBuilderInWorld: boolean
+    enableBuilderInWorld: boolean,
+    enableAvatarLODs: boolean
   }
   gifSupported: boolean
+  tld: string
+  validWorldRanges: Object
 }
 
 export type RealmsInfoForRenderer = {
-  current: Realm
+  current: CurrentRealmInfoForRenderer
   realms: {
     layer: string
     serverName: string
@@ -575,4 +595,16 @@ export type RealmsInfoForRenderer = {
     usersMax: number
     userParcels: [number, number][]
   }[]
+}
+
+export type CurrentRealmInfoForRenderer = {
+  layer: string
+  serverName: string
+  domain: string
+  contentServerUrl: string
+}
+
+export type TutorialInitializationMessage = {
+  fromDeepLink: boolean
+  enableNewTutorialCamera: boolean
 }

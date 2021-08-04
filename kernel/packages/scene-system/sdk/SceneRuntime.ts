@@ -1,14 +1,13 @@
 import { Script, inject, EventSubscriber } from 'decentraland-rpc'
 
 import { Vector2 } from 'decentraland-ecs/src'
-import { worldToGrid } from 'atomicHelpers/parcelScenePositions'
 import { sleep } from 'atomicHelpers/sleep'
 import future, { IFuture } from 'fp-future'
 
 import type { ScriptingTransport, ILogOpts } from 'decentraland-rpc/src/common/json-rpc/types'
 import type { QueryType } from 'decentraland-ecs'
 import type { DecentralandInterface, IEvents } from 'decentraland-ecs/src/decentraland/Types'
-import type { IEngineAPI } from 'shared/apis/EngineAPI'
+import type { IEngineAPI } from 'shared/apis/IEngineAPI'
 import type { EnvironmentAPI } from 'shared/apis/EnvironmentAPI'
 import type {
   RPCSendableMessage,
@@ -82,6 +81,11 @@ export abstract class SceneRuntime extends Script {
 
   eventSubscriber!: EventSubscriber
 
+  // this dictionary contains the list of subscriptions.
+  // the boolean value indicates if the client is actively
+  // listenting to that event
+  subscribedEvents: Map<string, boolean> = new Map<string, boolean>()
+
   onUpdateFunctions: Array<(dt: number) => void> = []
   onStartFunctions: Array<Function> = []
   onEventFunctions: Array<(event: any) => void> = []
@@ -105,7 +109,7 @@ export abstract class SceneRuntime extends Script {
     super(transport, opt)
   }
 
-  abstract async runCode(source: string, env: any): Promise<void>
+  abstract runCode(source: string, env: any): Promise<void>
   abstract onError(error: Error): void
   abstract onLog(...messages: any[]): void
   abstract startLoop(): void
@@ -170,7 +174,11 @@ export abstract class SceneRuntime extends Script {
       if (codeRequest.ok) {
         return [bootstrapData, await codeRequest.text()] as const
       } else {
-        throw new Error(`SDK: Error while loading ${url} (${mappingName} -> ${mapping})`)
+        // even though the loading failed, we send the message initMessagesFinished to not block loading
+        // in spawning points
+        this.events.push(this.initMessagesFinished())
+        this.sendBatch()
+        throw new Error(`SDK: Error while loading ${url} (${mappingName} -> ${mapping}) the mapping was not found`)
       }
     }
 
@@ -241,6 +249,11 @@ export abstract class SceneRuntime extends Script {
         },
 
         openExternalUrl(url: string) {
+          if (JSON.stringify(url).length > 49000) {
+            that.onError(new Error('URL payload cannot exceed 49.000 bytes'))
+            return
+          }
+
           if (that.allowOpenExternalUrl) {
             that.events.push({
               type: 'OpenExternalUrl',
@@ -254,14 +267,17 @@ export abstract class SceneRuntime extends Script {
 
         openNFTDialog(assetContractAddress: string, tokenId: string, comment: string | null) {
           if (that.allowOpenExternalUrl) {
+            let payload = { assetContractAddress, tokenId, comment }
+
+            if (JSON.stringify(payload).length > 49000) {
+              that.onError(new Error('OpenNFT payload cannot exceed 49.000 bytes'))
+              return
+            }
+
             that.events.push({
               type: 'OpenNFTDialog',
               tag: '',
-              payload: {
-                assetContractAddress,
-                tokenId,
-                comment
-              } as OpenNFTDialogPayload
+              payload: payload as OpenNFTDialogPayload
             })
           } else {
             this.error('openNFTDialog can only be used inside a pointerEvent')
@@ -306,6 +322,11 @@ export abstract class SceneRuntime extends Script {
 
         /** called after adding a component to the entity or after updating a component */
         updateEntityComponent(entityId: string, componentName: string, classId: number, json: string): void {
+          if (json.length > 49000) {
+            that.onError(new Error('Component payload cannot exceed 49.000 bytes'))
+            return
+          }
+
           if (componentNameRE.test(componentName)) {
             that.events.push({
               type: 'UpdateEntityComponent',
@@ -376,19 +397,24 @@ export abstract class SceneRuntime extends Script {
 
         /** subscribe to specific events, events will be handled by the onEvent function */
         subscribe(eventName: string): void {
-          that.eventSubscriber.on(eventName, (event) => {
-            if (eventName === 'raycastResponse') {
-              let idAsNumber = parseInt(event.data.queryId, 10)
-              if (numberToIdStore[idAsNumber]) {
-                event.data.queryId = numberToIdStore[idAsNumber].toString()
+          if (!that.subscribedEvents.has(eventName)) {
+            that.subscribedEvents.set(eventName, true)
+
+            that.eventSubscriber.on(eventName, (event) => {
+              if (eventName === 'raycastResponse') {
+                let idAsNumber = parseInt(event.data.queryId, 10)
+                if (numberToIdStore[idAsNumber]) {
+                  event.data.queryId = numberToIdStore[idAsNumber].toString()
+                }
               }
-            }
-            that.fireEvent({ type: eventName, data: event.data })
-          })
+              that.fireEvent({ type: eventName, data: event.data })
+            })
+          }
         },
 
         /** unsubscribe to specific event */
         unsubscribe(eventName: string): void {
+          that.subscribedEvents.delete(eventName)
           that.eventSubscriber.off(eventName)
         },
 
@@ -550,7 +576,13 @@ export abstract class SceneRuntime extends Script {
       }
 
       const e = event.data as IEvents['positionChanged']
-      const playerPosition = worldToGrid(e.cameraPosition)
+
+      //NOTE: calling worldToGrid from parcelScenePositions.ts here crashes kernel when there are 80+ workers since chrome 92.
+      const PARCEL_SIZE = 16
+      const playerPosition = new Vector2(
+        Math.floor(e.cameraPosition.x / PARCEL_SIZE),
+        Math.floor(e.cameraPosition.z / PARCEL_SIZE)
+      )
 
       // @ts-ignore
       if (playerPosition === undefined || this.scenePosition === undefined) {

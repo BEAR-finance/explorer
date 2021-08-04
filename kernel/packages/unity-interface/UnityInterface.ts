@@ -15,102 +15,65 @@ import {
   UpdateUserStatusMessage,
   RenderProfile,
   BuilderConfiguration,
-  Wearable,
   KernelConfigForRenderer,
   RealmsInfoForRenderer,
   ContentMapping,
-  Profile
+  Profile,
+  TutorialInitializationMessage,
+  WorldPosition
 } from 'shared/types'
 import { nativeMsgBridge } from './nativeMessagesBridge'
 import { HotSceneInfo } from 'shared/social/hotScenes'
 import { defaultLogger } from 'shared/logger'
 import { setDelightedSurveyEnabled } from './delightedSurvey'
 import { renderStateObservable } from '../shared/world/worldState'
-import { DeploymentResult } from '../shared/apis/SceneStateStorageController/types'
-import { ReportRendererInterfaceError } from 'shared/loading/ReportFatalError'
-import { QuestForRenderer } from 'dcl-ecs-quests/src/types'
+import { BuilderAsset, DeploymentResult } from '../shared/apis/SceneStateStorageController/types'
+import { QuestForRenderer } from '@dcl/ecs-quests/@dcl/types'
 import { profileToRendererFormat } from 'shared/profiles/transformations/profileToRendererFormat'
+import { WearableV2 } from 'shared/catalogs/types'
+import { Observable } from 'decentraland-ecs/src'
 
 const MINIMAP_CHUNK_SIZE = 100
 
-let _gameInstance: any = null
-let originalFillMouseEventData: any
+export let originalPixelRatio: number = 1
 
-function fillMouseEventDataWrapper(eventStruct: any, e: any, target: any) {
-  let widthRatio = _gameInstance.Module.canvas.widthNative / (window.innerWidth * devicePixelRatio)
-  let heightRatio = _gameInstance.Module.canvas.heightNative / (window.innerHeight * devicePixelRatio)
-
-  let eWrapper: any = {
-    clientX: e.clientX * widthRatio,
-    clientY: e.clientY * heightRatio,
-    screenX: e.screenX,
-    screenY: e.screenY,
-    ctrlKey: e.ctrlKey,
-    shiftKey: e.shiftKey,
-    altKey: e.altKey,
-    metaKey: e.metaKey,
-    button: e.button,
-    buttons: e.buttons,
-    movementX: e['movementX'] || e['mozMovementX'] || e['webkitMovementX'],
-    movementY: e['movementY'] || e['mozMovementY'] || e['webkitMovementY'],
-    type: e.type
-  }
-
-  originalFillMouseEventData(eventStruct, eWrapper, target)
-}
-
-export let targetHeight: number = 1080
-
-function resizeCanvas(module: any) {
+function resizeCanvas(targetHeight: number) {
   // When renderer is configured with unlimited resolution,
   // the targetHeight is set to an arbitrary high value
   let assumeUnlimitedResolution: boolean = targetHeight > 2000
-  let finalHeight
-  let finalWidth
 
   if (assumeUnlimitedResolution) {
-    targetHeight = window.innerHeight * devicePixelRatio
-    finalHeight = targetHeight
-    finalWidth = window.innerWidth * devicePixelRatio
+    devicePixelRatio = originalPixelRatio
   } else {
     // We calculate width using height as reference
-    const screenWidth = screen.width * devicePixelRatio
-    const screenHeight = screen.height * devicePixelRatio
-    const targetWidth = targetHeight * (screenWidth / screenHeight)
+    const screenHeight = screen.height * originalPixelRatio
 
     const pixelRatioH = targetHeight / screenHeight
-    const pixelRatioW = targetWidth / screenWidth
 
-    finalHeight = window.innerHeight * devicePixelRatio * pixelRatioH
-    finalWidth = window.innerWidth * devicePixelRatio * pixelRatioW
+    // From 2020 version onwards, Unity hooks to devicePixelRatio to adjust
+    // the FBO size instead of the canvas resize.
+    devicePixelRatio = pixelRatioH * originalPixelRatio
   }
-
-  module.setCanvasSize(finalWidth, finalHeight)
 }
 
 export class UnityInterface {
   public debug: boolean = false
   public gameInstance: any
   public Module: any
+  public currentHeight: number = -1
+  public crashPayloadResponseObservable: Observable<string> = new Observable<string>()
 
   public SetTargetHeight(height: number): void {
     if (EDITOR) {
       return
     }
 
-    if (targetHeight === height) {
+    if (this.currentHeight === height) {
       return
     }
 
-    if (!this.gameInstance.Module) {
-      defaultLogger.log(
-        `Can't change base resolution height to ${height}! Are you running explorer in unity editor or native?`
-      )
-      return
-    }
-
-    targetHeight = height
-    window.dispatchEvent(new Event('resize'))
+    this.currentHeight = height
+    resizeCanvas(height)
   }
 
   public Init(gameInstance: any): void {
@@ -120,7 +83,6 @@ export class UnityInterface {
 
     this.gameInstance = gameInstance
     this.Module = this.gameInstance.Module
-    _gameInstance = gameInstance
 
     if (this.Module) {
       if (EDITOR) {
@@ -128,26 +90,10 @@ export class UnityInterface {
         canvas.width = canvas.parentElement.clientWidth
         canvas.height = canvas.parentElement.clientHeight
       } else {
-        window.addEventListener('resize', this.resizeCanvasDelayed)
-
-        document.addEventListener('visibilitychange', () => {
-          if (document.visibilityState === 'visible') resizeCanvas(this.Module)
-        })
-
-        this.resizeCanvasDelayed(null)
-        this.waitForFillMouseEventData()
+        // TODO(Brian): Here we save the original pixel ratio, but we aren't listening to changes
+        //              We may have to listen them for some devices?
+        originalPixelRatio = devicePixelRatio
       }
-    }
-  }
-
-  public waitForFillMouseEventData() {
-    let DCL = (window as any)['DCL']
-
-    if (DCL.JSEvents !== undefined) {
-      originalFillMouseEventData = DCL.JSEvents.fillMouseEventData
-      DCL.JSEvents.fillMouseEventData = fillMouseEventDataWrapper
-    } else {
-      setTimeout(this.waitForFillMouseEventData, 100)
     }
   }
 
@@ -165,14 +111,6 @@ export class UnityInterface {
 
   public SetRenderProfile(id: RenderProfile) {
     this.SendMessageToUnity('Main', 'SetRenderProfile', JSON.stringify({ id: id }))
-  }
-
-  public DumpScenesLoadInfo() {
-    this.SendMessageToUnity('Main', 'DumpScenesLoadInfo')
-  }
-
-  public DumpRendererLockersInfo() {
-    this.SendMessageToUnity('Main', 'DumpRendererLockersInfo')
   }
 
   public CreateGlobalScene(data: {
@@ -252,8 +190,42 @@ export class UnityInterface {
     this.SendMessageToUnity('Main', 'SetDisableAssetBundles')
   }
 
+  public async CrashPayloadRequest(): Promise<string> {
+    // Over wasm this should come back on the same call stack frame because
+    // the response comes within the CrashPayloadRequest method body.
+
+    // For websocket this should take more frames, so we need promises.
+    let promise = new Promise<string>((resolve, reject) => {
+      let crashListener = this.crashPayloadResponseObservable.addOnce((payload) => {
+        resolve(payload)
+      })
+
+      setTimeout(() => {
+        this.crashPayloadResponseObservable.remove(crashListener)
+        reject()
+      }, 2000)
+
+      this.SendMessageToUnity('Main', 'CrashPayloadRequest')
+    })
+
+    return promise
+  }
+
   public ActivateRendering() {
     this.SendMessageToUnity('Main', 'ActivateRendering')
+  }
+
+  public SetLoadingScreen(data: {
+    isVisible: Boolean,
+    message: string,
+    showWalletPrompt: boolean,
+    showTips: boolean
+  }) {
+    if (this.gameInstance === undefined) {
+      return
+    }
+
+    this.SendMessageToUnity('Bridges', "SetLoadingScreen", JSON.stringify(data))
   }
 
   public DeactivateRendering() {
@@ -285,7 +257,7 @@ export class UnityInterface {
     this.SendMessageToUnity('Main', 'AddUserProfileToCatalog', JSON.stringify(peerProfile))
   }
 
-  public AddWearablesToCatalog(wearables: Wearable[], context?: string) {
+  public AddWearablesToCatalog(wearables: WearableV2[], context?: string) {
     this.SendMessageToUnity('Main', 'AddWearablesToCatalog', JSON.stringify({ wearables, context }))
   }
 
@@ -336,12 +308,16 @@ export class UnityInterface {
     }
   }
 
-  public SetTutorialEnabled(fromDeepLink: boolean) {
-    this.SendMessageToUnity('TutorialController', 'SetTutorialEnabled', JSON.stringify(fromDeepLink))
+  public SetTutorialEnabled(tutorialConfig: TutorialInitializationMessage) {
+    this.SendMessageToUnity('TutorialController', 'SetTutorialEnabled', JSON.stringify(tutorialConfig))
   }
 
-  public SetTutorialEnabledForUsersThatAlreadyDidTheTutorial() {
-    this.SendMessageToUnity('TutorialController', 'SetTutorialEnabledForUsersThatAlreadyDidTheTutorial')
+  public SetTutorialEnabledForUsersThatAlreadyDidTheTutorial(tutorialConfig: TutorialInitializationMessage) {
+    this.SendMessageToUnity(
+      'TutorialController',
+      'SetTutorialEnabledForUsersThatAlreadyDidTheTutorial',
+      JSON.stringify(tutorialConfig)
+    )
   }
 
   public TriggerAirdropDisplay(data: AirdropInfo) {
@@ -385,6 +361,14 @@ export class UnityInterface {
     }
   }
 
+  public ConnectionToRealmSuccess(successData: WorldPosition) {
+    this.SendMessageToUnity('Main', 'ConnectionToRealmSuccess', JSON.stringify(successData))
+  }
+
+  public ConnectionToRealmFailed(failedData: WorldPosition) {
+    this.SendMessageToUnity('Main', 'ConnectionToRealmFailed', JSON.stringify(failedData))
+  }
+
   public SendGIFPointers(id: string, width: number, height: number, pointers: number[], frameDelays: number[]) {
     this.SendMessageToUnity('Main', 'UpdateGIFPointers', JSON.stringify({ id, width, height, pointers, frameDelays }))
   }
@@ -393,22 +377,14 @@ export class UnityInterface {
     this.SendMessageToUnity('Main', 'FailGIFFetch', id)
   }
 
-  public ConfigureEmailPrompt(tutorialStep: number) {
-    const emailCompletedFlag = 128
-    this.ConfigureHUDElement(HUDElementID.EMAIL_PROMPT, {
-      active: (tutorialStep & emailCompletedFlag) === 0,
-      visible: false
-    })
-  }
-
-  public ConfigureTutorial(tutorialStep: number, fromDeepLink: boolean) {
+  public ConfigureTutorial(tutorialStep: number, tutorialConfig: TutorialInitializationMessage) {
     const tutorialCompletedFlag = 256
 
     if (WORLD_EXPLORER) {
       if (RESET_TUTORIAL || (tutorialStep & tutorialCompletedFlag) === 0) {
-        this.SetTutorialEnabled(fromDeepLink)
+        this.SetTutorialEnabled(tutorialConfig)
       } else {
-        this.SetTutorialEnabledForUsersThatAlreadyDidTheTutorial()
+        this.SetTutorialEnabledForUsersThatAlreadyDidTheTutorial(tutorialConfig)
         setDelightedSurveyEnabled(true)
       }
     }
@@ -451,6 +427,18 @@ export class UnityInterface {
     this.SendMessageToUnity('Main', 'PublishSceneResult', JSON.stringify(result))
   }
 
+  public SendBuilderProjectInfo(projectName: string, projectDescription: string, isNewEmptyProject: boolean) {
+    this.SendMessageToUnity('Main', 'BuilderProjectInfo', JSON.stringify({ title: projectName, description: projectDescription, isNewEmptyProject: isNewEmptyProject }))
+  }
+
+  public SendBuilderCatalogHeaders(headers: Record<string, string>) {
+    this.SendMessageToUnity('Main', 'BuilderInWorldCatalogHeaders', JSON.stringify(headers))
+  }
+
+  public SendSceneAssets(assets: BuilderAsset[]) {
+    this.SendMessageToUnity('Main', 'AddAssets', JSON.stringify(assets))
+  }
+
   public SetENSOwnerQueryResult(searchInput: string, profiles: Profile[] | undefined) {
     if (!profiles) {
       this.SendMessageToUnity('Bridges', 'SetENSOwnerQueryResult', JSON.stringify({ searchInput, success: false }))
@@ -465,6 +453,10 @@ export class UnityInterface {
       'SetENSOwnerQueryResult',
       JSON.stringify({ searchInput, success: true, profiles: profilesForRenderer })
     )
+  }
+
+  public SendUnpublishSceneResult(result: DeploymentResult) {
+    this.SendMessageToUnity('Bridges', 'UnpublishSceneResult', JSON.stringify(result))
   }
 
   // *********************************************************************************
@@ -555,16 +547,10 @@ export class UnityInterface {
     this.SendBuilderMessage('SetBuilderConfiguration', JSON.stringify(config))
   }
 
-  private resizeCanvasDelayed(ev: UIEvent | null) {
-    window.setTimeout(() => {
-      resizeCanvas(_gameInstance.Module)
-    }, 100)
-  }
-
   // NOTE: we override wasm's setThrew function before sending message to unity and restore it to it's
   // original function after message is sent. If an exception is thrown during SendMessage we assume that it's related
   // to the code executed by the SendMessage on unity's side.
-  private SendMessageToUnity(object: string, method: string, payload: any = undefined) {
+  public SendMessageToUnity(object: string, method: string, payload: any = undefined) {
     // "this.Module" is not present when using remote websocket renderer, so we just send the message to unity without doing any override.
     if (!this.Module) {
       this.gameInstance.SendMessage(object, method, payload)
@@ -596,7 +582,6 @@ export class UnityInterface {
     if (isError) {
       const error = `Error while sending Message to Unity. Object: ${object}. Method: ${method}. Payload: ${payload}.`
       defaultLogger.error(error)
-      ReportRendererInterfaceError(error, error)
     }
   }
 }

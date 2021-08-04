@@ -9,6 +9,7 @@ import { SceneWorker } from 'shared/world/SceneWorker'
 import { unityInterface } from './UnityInterface'
 import { protobufMsgBridge } from './protobufMessagesBridge'
 import { nativeMsgBridge } from './nativeMessagesBridge'
+import { trackEvent } from 'shared/analytics'
 
 let sendBatchTime: Array<number> = []
 let sendBatchMsgs: Array<number> = []
@@ -24,6 +25,15 @@ export class UnityScene<T> implements ParcelSceneAPI {
 
   constructor(public data: EnvironmentData<T>) {
     this.logger = DEBUG_SCENE_LOG === true ? createLogger(getParcelSceneID(this) + ': ') : createDummyLogger()
+
+    const startLoadingTime = performance.now()
+
+    this.eventDispatcher.once('sceneStart', () => {
+      trackEvent('scene_start_event', {
+        scene_id: getParcelSceneID(this),
+        time_since_creation: performance.now() - startLoadingTime
+      })
+    })
   }
 
   sendBatch(actions: EntityAction[]): void {
@@ -59,6 +69,15 @@ export class UnityScene<T> implements ParcelSceneAPI {
     let messages = ''
     for (let i = 0; i < actions.length; i++) {
       const action = actions[i]
+
+      // Check moved from SceneRuntime.ts->DecentralandInterface.componentUpdate() here until we remove base64 support.
+      // This way we can still initialize problematic scenes in the Editor, otherwise the protobuf encoding explodes with such messages.
+      if (action.payload.json?.length > 49000) {
+        this.logger.error('Component payload cannot exceed 49.000 bytes. Skipping message.')
+
+        continue
+      }
+
       messages += protobufMsgBridge.encodeSceneMessage(sceneId, action.type, action.payload, action.tag)
       messages += '\n'
     }

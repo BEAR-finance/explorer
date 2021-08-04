@@ -9,7 +9,7 @@ import { EventEmitter } from 'events'
 import future, { IFuture } from 'fp-future'
 
 import { loadedSceneWorkers } from '../shared/world/parcelSceneManager'
-import { SceneJsonData, ILand, HUDElementID, BuilderConfiguration, Wearable } from '../shared/types'
+import { SceneJsonData, ILand, HUDElementID, BuilderConfiguration, WearableV2 } from '../shared/types'
 import { normalizeContentMappings } from '../shared/selectors'
 import { SceneWorker } from '../shared/world/SceneWorker'
 import { initializeUnity } from '../unity-interface/initializer'
@@ -162,9 +162,9 @@ namespace editor {
   /**
    * Function executed by builder which is the first function of the entry point
    */
-  export async function initEngine(container: HTMLElement, buildConfigPath: string) {
+  export async function initEngine(container: HTMLElement) {
     try {
-      await initializeUnity(container, buildConfigPath)
+      await initializeUnity(container)
       defaultLogger.log('Engine initialized.')
       unityInterface.ConfigureHUDElement(HUDElementID.NFT_INFO_DIALOG, { active: true, visible: false })
       unityInterface.ConfigureHUDElement(HUDElementID.OPEN_EXTERNAL_URL_PROMPT, { active: true, visible: false })
@@ -274,7 +274,7 @@ namespace editor {
     }
   }
 
-  export function addWearablesToCatalog(wearables: Wearable[]) {
+  export function addWearablesToCatalog(wearables: WearableV2[]) {
     unityInterface.AddWearablesToCatalog(wearables)
   }
 

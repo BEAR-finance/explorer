@@ -16,7 +16,8 @@ import {
   COMMS_SERVICE,
   RESIZE_SERVICE,
   PIN_CATALYST,
-  HOTSCENES_SERVICE
+  HOTSCENES_SERVICE,
+  POI_SERVICE
 } from 'config'
 
 export function daoReducer(state?: DaoState, action?: AnyAction): DaoState {
@@ -31,6 +32,7 @@ export function daoReducer(state?: DaoState, action?: AnyAction): DaoState {
       resizeService: '',
       hotScenesService: '',
       exploreRealmsService: '',
+      poiService: '',
       realm: undefined,
       candidates: [],
       addedCandidates: [],
@@ -88,7 +90,12 @@ export function daoReducer(state?: DaoState, action?: AnyAction): DaoState {
       return {
         ...state,
         candidates: state.candidates.map((it) => {
-          if (it && it.catalystName === action.payload.catalystName && it.layer.name === action.payload.layer) {
+          if (
+            it &&
+            it.type === 'layer-based' &&
+            it.catalystName === action.payload.catalystName &&
+            it.layer.name === action.payload.layer
+          ) {
             return { ...it, layer: { ...it.layer, usersCount: it.layer.maxUsers } }
           } else {
             return it
@@ -117,12 +124,13 @@ export function daoReducer(state?: DaoState, action?: AnyAction): DaoState {
 function realmProperties(realm: Realm, configOverride: boolean = true): Partial<DaoState> {
   const domain = realm.domain
   return {
-    fetchContentServer: FETCH_CONTENT_SERVICE && configOverride ? FETCH_CONTENT_SERVICE : domain + '/lambdas/contentv2',
+    fetchContentServer: FETCH_CONTENT_SERVICE && configOverride ? FETCH_CONTENT_SERVICE : domain + '/content',
     catalystServer: domain,
     updateContentServer: UPDATE_CONTENT_SERVICE && configOverride ? UPDATE_CONTENT_SERVICE : domain + '/content',
     commsServer: COMMS_SERVICE && configOverride ? COMMS_SERVICE : domain + '/comms',
     resizeService: RESIZE_SERVICE && configOverride ? RESIZE_SERVICE : domain + '/lambdas/images',
     hotScenesService: HOTSCENES_SERVICE && configOverride ? HOTSCENES_SERVICE : domain + '/lambdas/explore/hot-scenes',
+    poiService: POI_SERVICE && configOverride ? POI_SERVICE : domain + '/lambdas/contracts/pois',
     exploreRealmsService: domain + '/lambdas/explore/realms',
     realm
   }
@@ -147,7 +155,7 @@ function ensureContentWhitelist(state: Partial<DaoState>, contentWhitelist: Cand
   const { domain } = contentWhitelist[0]
   return {
     ...state,
-    fetchContentServer: FETCH_CONTENT_SERVICE ? FETCH_CONTENT_SERVICE : domain + '/lambdas/contentv2'
+    fetchContentServer: FETCH_CONTENT_SERVICE ? FETCH_CONTENT_SERVICE : domain + '/content'
   }
 }
 

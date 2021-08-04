@@ -1,4 +1,3 @@
-import { TeleportController } from 'shared/world/TeleportController'
 import {
   DEBUG,
   EDITOR,
@@ -27,6 +26,7 @@ import { ILandToLoadableParcelScene, ILandToLoadableParcelSceneUpdate } from 'sh
 import { UnityParcelScene } from './UnityParcelScene'
 import { loginCompleted } from 'shared/ethereum/provider'
 import { UnityInterface, unityInterface } from './UnityInterface'
+import { clientDebug, ClientDebug } from './ClientDebug'
 import { BrowserInterface, browserInterface } from './BrowserInterface'
 import { UnityScene } from './UnityScene'
 import { ensureUiApis } from 'shared/world/uiSceneInitializer'
@@ -34,28 +34,23 @@ import Html from '../shared/Html'
 import { WebSocketTransport } from 'decentraland-rpc'
 import { kernelConfigForRenderer } from './kernelConfigForRenderer'
 import type { ScriptingTransport } from 'decentraland-rpc/lib/common/json-rpc/types'
+import { TeleportController } from 'shared/world/TeleportController'
 
-declare const globalThis: UnityInterfaceContainer &
-  BrowserInterfaceContainer &
-  StoreContainer & { analytics: any; delighted: any }
+declare const globalThis: RendererInterfaces &
+  StoreContainer & { analytics: any; delighted: any; clientDebug: ClientDebug }
 
-export type BrowserInterfaceContainer = {
-  browserInterface: BrowserInterface
-}
-
-export type UnityInterfaceContainer = {
+export type RendererInterfaces = {
   unityInterface: UnityInterface
+  browserInterface: BrowserInterface
 }
 
 globalThis.browserInterface = browserInterface
 globalThis.unityInterface = unityInterface
+globalThis.clientDebug = clientDebug
 
 type GameInstance = {
   SendMessage(object: string, method: string, ...args: (number | string)[]): void
 }
-
-const rendererVersion = require('decentraland-renderer')
-window['console'].log('Renderer version: ' + rendererVersion)
 
 export let gameInstance!: GameInstance
 export let isTheFirstLoading = true
@@ -68,6 +63,20 @@ export function setLoadingScreenVisible(shouldShow: boolean) {
     isTheFirstLoading = false
     TeleportController.stopTeleportAnimation()
   }
+
+  refreshLoadingScreen()
+}
+
+export function refreshLoadingScreen() {
+  let state = globalThis.globalStore.getState()
+  let loading = state?.loading
+  let session = state?.session
+  unityInterface.SetLoadingScreen({
+    isVisible: loading?.showLoadingScreen || false,
+    message: loading?.message || "",
+    showWalletPrompt: session?.showWalletPrompt || false,
+    showTips: loading?.initialLoad || false
+  })
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -91,7 +100,7 @@ function debuggingDecorator(_gameInstance: GameInstance) {
  *
  * @param _gameInstance Unity game instance
  */
-export async function initializeEngine(_gameInstance: GameInstance) {
+export async function initializeEngine(_gameInstance: GameInstance): Promise<void> {
   gameInstance = debuggingDecorator(_gameInstance)
 
   unityInterface.Init(_gameInstance)
@@ -122,18 +131,6 @@ export async function initializeEngine(_gameInstance: GameInstance) {
 
   if (!EDITOR) {
     await startGlobalScene(unityInterface, 'dcl-gs-avatars', 'Avatars', hudWorkerUrl)
-  }
-
-  return {
-    unityInterface,
-    onMessage(type: string, message: any) {
-      if (type in browserInterface) {
-        // tslint:disable-next-line:semicolon
-        ;(browserInterface as any)[type](message)
-      } else {
-        defaultLogger.info(`Unknown message (did you forget to add ${type} to unity-interface/dcl.ts?)`, message)
-      }
-    }
   }
 }
 

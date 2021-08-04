@@ -8,10 +8,13 @@ import { WebWorkerTransport } from 'decentraland-rpc/lib/common/transports/WebWo
 
 import { resolveUrl } from 'atomicHelpers/parseUrl'
 
-import { DEBUG, parcelLimits, getServerConfigurations, ENABLE_EMPTY_SCENES, LOS, PIN_CATALYST } from 'config'
+import { ensureMetaConfigurationInitialized } from 'shared/meta'
+import { getResourcesURL } from 'shared/location'
+
+import { DEBUG, parcelLimits, ENABLE_EMPTY_SCENES, LOS, getAssetBundlesBaseUrl } from 'config'
 
 import { ILand } from 'shared/types'
-import { getFetchContentServer, getCatalystServer, getFetchMetaContentService } from 'shared/dao/selectors'
+import { getFetchContentServer, getCatalystServer } from 'shared/dao/selectors'
 import defaultLogger from 'shared/logger'
 import { StoreContainer } from 'shared/store/rootTypes'
 
@@ -92,13 +95,26 @@ export class LifecycleManager extends TransportBasedServer {
       this.notify('Scene.reload', { sceneId })
     }
   }
+
+  async invalidateScene(sceneId: string) {
+    const landFuture = this.sceneIdToRequest.get(sceneId)
+    if (landFuture) {
+      const land = await landFuture
+      const parcels = land.sceneJsonData.scene.parcels
+      for (let parcel of parcels) {
+        this.positionToRequest.delete(parcel)
+      }
+      this.notify('Scene.Invalidate', { sceneId })
+    }
+  }
 }
 
 let server: LifecycleManager
-
 export const getServer = () => server
 
 export async function initParcelSceneWorker() {
+  await ensureMetaConfigurationInitialized()
+
   server = new LifecycleManager(WebWorkerTransport(worker))
 
   globalThis.workerManager = server
@@ -108,21 +124,16 @@ export async function initParcelSceneWorker() {
   const state = globalThis.globalStore.getState()
   const localServer = resolveUrl(`${location.protocol}//${location.hostname}:${8080}`, '/local-ipfs')
 
-  // NOTE(Brian): In branch urls we can't just use location.source - the value returned doesn't include
-  //              the branch full path! With this, we ensure the /branch/<branch-name> is included in the root url.
-  //              This is used for empty parcels and should be used for fetching any other local resource.
-  const fullRootUrl = `${location.protocol}//${location.host}${location.pathname}`.replace('index.html', '')
+  const fullRootUrl = getResourcesURL('.')
 
   server.notify('Lifecycle.initialize', {
     contentServer: DEBUG ? localServer : getFetchContentServer(state),
     catalystServer: DEBUG ? localServer : getCatalystServer(state),
-    metaContentService: DEBUG ? localServer : getFetchMetaContentService(state),
-    contentServerBundles: DEBUG || PIN_CATALYST ? '' : getServerConfigurations().contentAsBundle + '/',
+    contentServerBundles: getAssetBundlesBaseUrl() + '/',
     rootUrl: fullRootUrl,
     lineOfSightRadius: LOS ? Number.parseInt(LOS, 10) : parcelLimits.visibleRadius,
-    secureRadius: parcelLimits.secureRadius,
     emptyScenes: ENABLE_EMPTY_SCENES && !(globalThis as any)['isRunningTests'],
-    worldConfig: globalThis.globalStore.getState().meta.config.world
+    worldConfig: state.meta.config.world
   })
 
   return server

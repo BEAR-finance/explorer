@@ -1,4 +1,4 @@
-import { CommsConfig, FeatureFlags, MessageOfTheDayConfig, RootMetaState } from './types'
+import { BannedUsers, CommsConfig, FeatureFlags, MessageOfTheDayConfig, RootMetaState } from './types'
 import { Vector2Component } from 'atomicHelpers/landHelpers'
 import { getCatalystNodesDefaultURL, VOICE_CHAT_DISABLED_FLAG, WORLD_EXPLORER } from 'config'
 
@@ -22,11 +22,19 @@ export const getContentWhitelist = (store: RootMetaState): string[] => {
   return config.servers.contentWhitelist
 }
 
+export const getMinCatalystVersion = (store: RootMetaState): string | undefined => {
+  const { config } = store.meta
+
+  return config.minCatalystVersion
+}
+
 export const isMetaConfigurationInitiazed = (store: RootMetaState): boolean => store.meta.initialized
 
 export const getPois = (store: RootMetaState): Vector2Component[] => store.meta.config.world?.pois || []
 
 export const getCommsConfig = (store: RootMetaState): CommsConfig => store.meta.config.comms ?? {}
+
+export const getBannedUsers = (store: RootMetaState): BannedUsers => store.meta.config.bannedUsers ?? {}
 
 export const isMOTDInitialized = (store: RootMetaState): boolean =>
   store.meta.config.world ? store.meta.config.world?.messageOfTheDayInit || false : false
@@ -47,6 +55,9 @@ export const isFeatureEnabled = (store: RootMetaState, featureName: FeatureFlags
     return featureFlag ?? ifNotSet
   }
 }
+
+export const getSynapseUrl = (store: RootMetaState): string =>
+  store.meta.config.synapseUrl ?? 'https://chat.decentraland.zone'
 
 /** Convert camel case to upper snake case */
 function toUrlFlag(key: string) {

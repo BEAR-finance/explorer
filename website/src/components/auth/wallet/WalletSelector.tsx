@@ -1,17 +1,17 @@
-import React, { useMemo } from "react";
-import { ProviderType } from "decentraland-connect";
-import { isCucumberProvider, isDapperProvider } from "decentraland-dapps/dist/lib/eth";
-import { Modal } from "../../common/Modal";
-import { WalletButton, WalletButtonLogo } from "./WalletButton";
-import { Spinner } from "../../common/Spinner";
-import "./WalletSelector.css";
+import React, { useMemo } from 'react'
+import { ProviderType } from 'decentraland-connect'
+import { isCucumberProvider, isDapperProvider } from 'decentraland-dapps/dist/lib/eth'
+import { Modal } from '../../common/Modal'
+import { WalletButton, WalletButtonLogo } from './WalletButton'
+import { Spinner } from '../../common/Spinner'
+import './WalletSelector.css'
 
 export interface WalletSelectorProps {
-  open: boolean;
-  loading: boolean;
-  availableProviders: ProviderType[];
-  onLogin: (provider: ProviderType | null) => void;
-  onCancel: () => void;
+  open: boolean
+  loading: boolean
+  availableProviders: ProviderType[]
+  onLogin: (provider: ProviderType | null) => void
+  onCancel: () => void
 }
 
 export const WalletSelector: React.FC<WalletSelectorProps> = ({
@@ -19,16 +19,22 @@ export const WalletSelector: React.FC<WalletSelectorProps> = ({
   loading,
   availableProviders,
   onLogin,
-  onCancel,
+  onCancel
 }) => {
-  const hasWallet = availableProviders.includes(ProviderType.INJECTED)
-  function handleLogin(provider: ProviderType) {
+  const hasWallet = (availableProviders || []).includes(ProviderType.INJECTED)
+  function handleLogin(provider: ProviderType | null) {
     if (provider === ProviderType.INJECTED && !hasWallet) {
-      return;
+      return
     }
+
     if (onLogin) {
-      onLogin(provider);
+      onLogin(provider)
     }
+  }
+
+  function handleGuestLogin(e: React.MouseEvent<any>) {
+    e.preventDefault()
+    handleLogin(null)
   }
 
   const wallets = useMemo(() => {
@@ -45,11 +51,11 @@ export const WalletSelector: React.FC<WalletSelectorProps> = ({
       result.push(WalletButtonLogo.METAMASK)
     }
 
-    if (availableProviders.includes(ProviderType.FORTMATIC)) {
+    if ((availableProviders || []).includes(ProviderType.FORTMATIC)) {
       result.push(WalletButtonLogo.FORTMATIC)
     }
 
-    if (availableProviders.includes(ProviderType.WALLET_CONNECT)) {
+    if ((availableProviders || []).includes(ProviderType.WALLET_CONNECT)) {
       result.push(WalletButtonLogo.WALLET_CONNECT)
     }
 
@@ -68,26 +74,27 @@ export const WalletSelector: React.FC<WalletSelectorProps> = ({
   }
 
   return open ? (
-    <Modal
-      className="walletSelectorPopup"
-      onClose={onCancel}
-      withFlatBackground
-      withOverlay
-    >
+    <Modal className="walletSelectorPopup" onClose={onCancel} withFlatBackground withOverlay>
       <div className="walletSelector">
         <h2 className="walletSelectorTitle">Sign In or Create an Account</h2>
-        <div className="walletButtonContainer">
-          {loading && <Spinner />}
-          {!loading && wallets.map(wallet => (
-            <WalletButton
-              key={wallet}
-              type={wallet}
-              active={isActive(wallet)}
-              onClick={handleLogin}
-            />
-          ))}
-        </div>
+        {loading && (
+          <div className="walletButtonContainer">
+            <Spinner />
+          </div>
+        )}
+        {!loading && (
+          <div className="walletButtonContainer">
+            {wallets.map((wallet) => (
+              <WalletButton key={wallet} type={wallet} active={isActive(wallet)} onClick={handleLogin} />
+            ))}
+          </div>
+        )}
       </div>
+      {!loading && (
+        <a className="guestSelector" href="#guest" onClick={handleGuestLogin}>
+          Play as Guest
+        </a>
+      )}
     </Modal>
-  ) : null;
-};
+  ) : null
+}

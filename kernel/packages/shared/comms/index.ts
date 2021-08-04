@@ -5,12 +5,13 @@ import {
   COMMS,
   AUTO_CHANGE_REALM,
   genericAvatarSnapshots,
-  COMMS_PROFILE_TIMEOUT
+  COMMS_PROFILE_TIMEOUT,
+  COMMS_SERVICE
 } from 'config'
 import { CommunicationsController } from 'shared/apis/CommunicationsController'
 import { defaultLogger } from 'shared/logger'
 import { ChatMessage as InternalChatMessage, ChatMessageType, SceneFeatureToggles } from 'shared/types'
-import { positionObservable, PositionReport, lastPlayerPosition } from 'shared/world/positionThings'
+import { positionObservable, PositionReport } from 'shared/world/positionThings'
 import { lastPlayerScene } from 'shared/world/sceneState'
 import { ProfileAsPromise } from '../profiles/ProfileAsPromise'
 import { notifyStatusThroughChat } from './chat'
@@ -53,11 +54,11 @@ import {
 } from './interface/utils'
 import { BrokerWorldInstanceConnection } from '../comms/v1/brokerWorldInstanceConnection'
 import { profileToRendererFormat } from 'shared/profiles/transformations/profileToRendererFormat'
-import { ProfileForRenderer, uuid } from 'decentraland-ecs/src'
+import { ProfileForRenderer } from 'decentraland-ecs/src'
 import { renderStateObservable, isRendererEnabled, onNextRendererEnabled } from '../world/worldState'
 import { WorldInstanceConnection } from './interface/index'
 
-import { LighthouseWorldInstanceConnection } from './v2/LighthouseWorldInstanceConnection'
+import { LighthouseConnectionConfig, LighthouseWorldInstanceConnection } from './v2/LighthouseWorldInstanceConnection'
 
 import { Authenticator, AuthIdentity } from 'dcl-crypto'
 import { getCommsServer, getRealm, getAllCatalystCandidates } from '../dao/selectors'
@@ -75,24 +76,28 @@ import { observeRealmChange, pickCatalystRealm, changeToCrowdedRealm } from 'sha
 import { getCurrentUserProfile, getProfile } from 'shared/profiles/selectors'
 import { Profile, ProfileType, Snapshots } from 'shared/profiles/types'
 import { realmToString } from '../dao/utils/realmToString'
-import { queueTrackingEvent } from 'shared/analytics'
+import { trackEvent } from 'shared/analytics'
 import { messageReceived } from '../chat/actions'
 import { arrayEquals } from 'atomicHelpers/arrayEquals'
-import { getCommsConfig, isVoiceChatEnabledFor } from 'shared/meta/selectors'
+import { getBannedUsers, getCommsConfig, isVoiceChatEnabledFor } from 'shared/meta/selectors'
 import { ensureMetaConfigurationInitialized } from 'shared/meta/index'
-import { ReportFatalError } from 'shared/loading/ReportFatalError'
+import {
+  BringDownClientAndShowError,
+  ErrorContext,
+  ReportFatalErrorWithCommsPayload
+} from 'shared/loading/ReportFatalError'
 import {
   NEW_LOGIN,
-  UNEXPECTED_ERROR,
   commsEstablished,
   COMMS_COULD_NOT_BE_ESTABLISHED,
-  commsErrorRetrying
+  commsErrorRetrying,
+  ESTABLISHING_COMMS
 } from 'shared/loading/types'
 import { getIdentity, getStoredSession } from 'shared/session'
 import { createLogger } from '../logger'
 import { VoiceCommunicator, VoiceSpatialParams } from 'voice-chat-codec/VoiceCommunicator'
-import { voicePlayingUpdate, voiceRecordingUpdate } from './actions'
-import { getVoicePolicy, isVoiceChatRecording } from './selectors'
+import { setCommsIsland, voicePlayingUpdate, voiceRecordingUpdate } from './actions'
+import { getCommsIsland, getPreferedIsland, getVoicePolicy, isVoiceChatRecording } from './selectors'
 import { VOICE_CHAT_SAMPLE_RATE } from 'voice-chat-codec/constants'
 import future, { IFuture } from 'fp-future'
 import { getProfileType } from 'shared/profiles/getProfileType'
@@ -100,11 +105,14 @@ import { sleep } from 'atomicHelpers/sleep'
 import { localProfileReceived } from 'shared/profiles/actions'
 import { unityInterface } from 'unity-interface/UnityInterface'
 import { isURL } from 'atomicHelpers/isURL'
-import { VoicePolicy } from './types'
+import { RootCommsState, VoicePolicy } from './types'
 import { isFriend } from 'shared/friends/selectors'
 import { EncodedFrame } from 'voice-chat-codec/types'
 import Html from 'shared/Html'
 import { isFeatureToggleEnabled } from 'shared/selectors'
+import * as qs from 'query-string'
+import { MinPeerData, Position3D } from '@dcl/catalyst-peer'
+import { BannedUsers } from 'shared/meta/types'
 
 export type CommsVersion = 'v1' | 'v2'
 export type CommsMode = CommsV1Mode | CommsV2Mode
@@ -127,18 +135,17 @@ export const MORDOR_POSITION: Position = [
 
 type CommsContainer = {
   printCommsInformation: () => void
-  bots: {
-    create: () => string
-    list: () => string[]
-    remove: (id: string) => boolean
-    reposition: (id: string) => void
-  }
 }
 
 declare const globalThis: CommsContainer
 
 const logger = createLogger('comms: ')
 
+type ProfilePromiseState = {
+  promise: Promise<ProfileForRenderer | void>
+  version: number | null
+  status: 'ok' | 'loading' | 'error'
+}
 export class PeerTrackingInfo {
   public position: Position | null = null
   public identity: string | null = null
@@ -149,11 +156,7 @@ export class PeerTrackingInfo {
   public receivedPublicChatMessages = new Set<string>()
   public talking = false
 
-  profilePromise: {
-    promise: Promise<ProfileForRenderer | void>
-    version: number | null
-    status: 'ok' | 'loading' | 'error'
-  } = {
+  profilePromise: ProfilePromiseState = {
     promise: Promise.resolve(),
     version: null,
     status: 'loading'
@@ -453,7 +456,7 @@ function processChatMessage(context: Context, fromAlias: string, message: Packag
           timestamp: parseInt(timestamp, 10)
         })
       } else {
-        if (profile && user.userId && !isBlocked(profile, user.userId)) {
+        if (profile && user.userId && !isBlockedOrBanned(profile, getBannedUsers(store.getState()), user.userId)) {
           const messageEntry: InternalChatMessage = {
             messageType: ChatMessageType.PUBLIC,
             messageId: msgId,
@@ -491,7 +494,7 @@ function shouldPlayVoice(profile: Profile, voiceUserId: string) {
   const myAddress = getIdentity()?.address
   return (
     isVoiceAllowedByPolicy(profile, voiceUserId) &&
-    !isBlocked(profile, voiceUserId) &&
+    !isBlockedOrBanned(profile, getBannedUsers(store.getState()), voiceUserId) &&
     !isMuted(profile, voiceUserId) &&
     !hasBlockedMe(myAddress, voiceUserId) &&
     isVoiceChatAllowedByCurrentScene()
@@ -529,28 +532,28 @@ function processProfileRequest(context: Context, fromAlias: string, message: Pac
   if (context.sendingProfileResponse) return
 
   context.sendingProfileResponse = true
-  ;(async () => {
-    const timeSinceLastProfile = Date.now() - context.lastProfileResponseTime
+    ; (async () => {
+      const timeSinceLastProfile = Date.now() - context.lastProfileResponseTime
 
-    // We don't want to send profile responses too frequently, so we delay the response to send a maximum of 1 per TIME_BETWEEN_PROFILE_RESPONSES
-    if (timeSinceLastProfile < TIME_BETWEEN_PROFILE_RESPONSES) {
-      await sleep(TIME_BETWEEN_PROFILE_RESPONSES - timeSinceLastProfile)
-    }
+      // We don't want to send profile responses too frequently, so we delay the response to send a maximum of 1 per TIME_BETWEEN_PROFILE_RESPONSES
+      if (timeSinceLastProfile < TIME_BETWEEN_PROFILE_RESPONSES) {
+        await sleep(TIME_BETWEEN_PROFILE_RESPONSES - timeSinceLastProfile)
+      }
 
-    const profile = await ProfileAsPromise(
-      myAddress,
-      message.data.version ? parseInt(message.data.version, 10) : undefined,
-      getProfileType(myIdentity)
-    )
+      const profile = await ProfileAsPromise(
+        myAddress,
+        message.data.version ? parseInt(message.data.version, 10) : undefined,
+        getProfileType(myIdentity)
+      )
 
-    if (context.currentPosition) {
-      context.worldInstanceConnection?.sendProfileResponse(context.currentPosition, stripSnapshots(profile))
-    }
+      if (context.currentPosition) {
+        context.worldInstanceConnection?.sendProfileResponse(context.currentPosition, stripSnapshots(profile))
+      }
 
-    context.lastProfileResponseTime = Date.now()
-  })()
-    .finally(() => (context.sendingProfileResponse = false))
-    .catch((e) => defaultLogger.error('Error getting profile for responding request to comms', e))
+      context.lastProfileResponseTime = Date.now()
+    })()
+      .finally(() => (context.sendingProfileResponse = false))
+      .catch((e) => defaultLogger.error('Error getting profile for responding request to comms', e))
 }
 
 function processProfileResponse(context: Context, fromAlias: string, message: Package<ProfileResponse>) {
@@ -567,6 +570,15 @@ function processProfileResponse(context: Context, fromAlias: string, message: Pa
     // If we received an unexpected profile, maybe the profile saga can use this preemptively
     store.dispatch(localProfileReceived(profile.userId, profile))
   }
+}
+
+function isBlockedOrBanned(profile: Profile, bannedUsers: BannedUsers, userId: string): boolean {
+  return isBlocked(profile, userId) || isBannedFromChat(bannedUsers, userId)
+}
+
+function isBannedFromChat(bannedUsers: BannedUsers, userId: string): boolean {
+  const bannedUser = bannedUsers[userId]
+  return bannedUser && bannedUser.some(it => it.type === 'VOICE_CHAT_AND_CHAT' && it.expiration > Date.now())
 }
 
 function isBlocked(profile: Profile, userId: string): boolean {
@@ -843,6 +855,14 @@ function checkAutochangeRealm(visiblePeers: ProcessingPeerInfo[], context: Conte
   }
 }
 
+function removeMissingPeers(context: Context, newPeers: MinPeerData[]) {
+  for (const alias of context.peerData.keys()) {
+    if (!newPeers.some((x) => x.id === alias)) {
+      removePeer(context, alias)
+    }
+  }
+}
+
 function removeAllPeers(context: Context) {
   for (const alias of context.peerData.keys()) {
     removePeer(context, alias)
@@ -927,10 +947,16 @@ export async function connect(userId: string) {
       case 'v2': {
         await ensureMetaConfigurationInitialized()
         const lighthouseUrl = getCommsServer(store.getState())
-        const realm = getRealm(store.getState())
+        let realm = getRealm(store.getState())
         const commsConfig = getCommsConfig(store.getState())
 
-        const peerConfig: any = {
+        if (COMMS_SERVICE) {
+          // For now, we assume that if we provided a hardcoded url for comms it will be island based
+          realm = { ...realm!, lighthouseVersion: '1.0.0' }
+          delete realm.layer
+        }
+
+        const peerConfig: LighthouseConnectionConfig = {
           connectionConfig: {
             iceServers: commConfigurations.iceServers
           },
@@ -949,13 +975,34 @@ export async function connect(userId: string) {
           positionConfig: {
             selfPosition: () => {
               if (context && context.currentPosition) {
-                return context.currentPosition.slice(0, 3)
+                return context.currentPosition.slice(0, 3) as Position3D
               }
             },
             maxConnectionDistance: 4,
             nearbyPeersDistance: 5,
             disconnectDistance: 5
-          }
+          },
+          eventsHandler: {
+            onIslandChange: (island: string | undefined, peers: MinPeerData[]) => {
+              store.dispatch(setCommsIsland(island))
+
+              if (!context) {
+                logger.warn('no context was found to remove the peers')
+                return
+              }
+
+              removeMissingPeers(context, peers)
+            },
+            onPeerLeftIsland: (peerId: string) => {
+              if (!context) {
+                logger.warn('no context was found to remove the peer')
+                return
+              }
+
+              removePeer(context, peerId)
+            }
+          },
+          preferedIslandId: getPreferedIsland(store.getState())
         }
 
         if (!commsConfig.relaySuspensionDisabled) {
@@ -1013,7 +1060,8 @@ export async function connect(userId: string) {
         } catch (e) {
           disconnect()
           defaultLogger.error(`error while trying to establish communications `, e)
-          ReportFatalError(UNEXPECTED_ERROR)
+          ReportFatalErrorWithCommsPayload(e, ErrorContext.COMMS_INIT)
+          BringDownClientAndShowError(ESTABLISHING_COMMS)
         }
       })
     }
@@ -1040,7 +1088,8 @@ export async function startCommunications(context: Context) {
           // max number of attemps reached => rethrow error
           logger.info(`Max number of attemps reached (${maxAttemps}), unsuccessful connection`)
           disconnect()
-          ReportFatalError(COMMS_COULD_NOT_BE_ESTABLISHED)
+          ReportFatalErrorWithCommsPayload(e, ErrorContext.COMMS_INIT)
+          BringDownClientAndShowError(COMMS_COULD_NOT_BE_ESTABLISHED)
           throw e
         } else {
           // max number of attempts not reached => continue with loop
@@ -1116,9 +1165,9 @@ async function doStartCommunications(context: Context) {
         connectionAnalytics.visiblePeers = context?.stats.visiblePeerIds.map((it) => it.slice(-6))
 
         if (connectionAnalytics) {
-          queueTrackingEvent('Comms Status v2', connectionAnalytics)
+          trackEvent('Comms Status v2', connectionAnalytics)
         }
-      }, 30000)
+      }, 60000) // Once per minute
     }
 
     context.worldRunningObserver = renderStateObservable.add((isRunning) => {
@@ -1137,7 +1186,7 @@ async function doStartCommunications(context: Context) {
         obj.immediate
       ] as Position
 
-      if (context && isRendererEnabled) {
+      if (context && isRendererEnabled()) {
         onPositionUpdate(context, p)
       }
     })
@@ -1178,7 +1227,7 @@ async function doStartCommunications(context: Context) {
       voiceCommunicator.addStreamRecordingListener((recording) => {
         store.dispatch(voiceRecordingUpdate(recording))
       })
-      ;(globalThis as any).__DEBUG_VOICE_COMMUNICATOR = voiceCommunicator
+        ; (globalThis as any).__DEBUG_VOICE_COMMUNICATOR = voiceCommunicator
     }
   } catch (e) {
     throw new ConnectionEstablishmentError(e.message)
@@ -1207,7 +1256,8 @@ function handleReconnectionError() {
 
 function handleIdTaken() {
   disconnect()
-  ReportFatalError(NEW_LOGIN)
+  ReportFatalErrorWithCommsPayload(new Error(`Handle Id already taken`), ErrorContext.COMMS_INIT)
+  BringDownClientAndShowError(NEW_LOGIN)
 }
 
 function handleFullLayer() {
@@ -1274,62 +1324,6 @@ globalThis.printCommsInformation = function () {
   }
 }
 
-type Bot = { id: string; handle: any }
-const bots: Bot[] = []
-
-globalThis.bots = {
-  create: () => {
-    const id = uuid()
-    processProfileMessage(context!, id, id, {
-      type: 'profile',
-      time: Date.now(),
-      data: {
-        version: '1',
-        user: id,
-        type: ProfileType.DEPLOYED
-      }
-    })
-    const position = { ...lastPlayerPosition }
-    const handle = setInterval(() => {
-      processPositionMessage(context!, id, {
-        type: 'position',
-        time: Date.now(),
-        data: [position.x, position.y, position.z, 0, 0, 0, 0, false]
-      })
-    }, 1000)
-    bots.push({ id, handle })
-    return id
-  },
-  remove: (id: string | undefined) => {
-    let bot
-    if (id) {
-      bot = bots.find((bot) => bot.id === id)
-    } else {
-      bot = bots.length > 0 ? bots[0] : undefined
-    }
-    if (bot) {
-      clearInterval(bot.handle)
-      bots.splice(bots.indexOf(bot), 1)
-      return true
-    }
-    return false
-  },
-  reposition: (id: string) => {
-    // to test immediate repositioning
-    let bot = bots.find((bot) => bot.id === id)
-    if (bot) {
-      const position = { ...lastPlayerPosition }
-
-      bot.handle = processPositionMessage(context!, id, {
-        type: 'position',
-        time: Date.now(),
-        data: [position.x, position.y, position.z, 0, 0, 0, 0, true]
-      })
-    }
-  },
-  list: () => bots.map((bot) => bot.id)
-}
-
 function stripSnapshots(profile: Profile): Profile {
   const newSnapshots: Record<string, string> = {}
   const currentSnapshots: Record<string, string> = profile.avatar.snapshots
@@ -1345,4 +1339,33 @@ function stripSnapshots(profile: Profile): Profile {
     ...profile,
     avatar: { ...profile.avatar, snapshots: newSnapshots as Snapshots }
   }
+}
+
+function observeIslandChange(
+  store: Store<RootCommsState>,
+  onIslandChange: (previousIsland: string | undefined, currentIsland: string | undefined) => any
+) {
+  let currentIsland = getCommsIsland(store.getState())
+
+  store.subscribe(() => {
+    const previousIsland = currentIsland
+    currentIsland = getCommsIsland(store.getState())
+    if (currentIsland !== previousIsland) {
+      onIslandChange(previousIsland, currentIsland)
+    }
+  })
+}
+
+export function initializeUrlIslandObserver() {
+  observeIslandChange(store, (_previousIsland, currentIsland) => {
+    const q = qs.parse(location.search)
+
+    if (currentIsland) {
+      q.island = currentIsland
+    } else {
+      delete q.island
+    }
+
+    history.replaceState({ island: currentIsland }, '', `?${qs.stringify(q)}`)
+  })
 }

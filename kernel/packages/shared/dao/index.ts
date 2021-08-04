@@ -1,6 +1,16 @@
 import defaultLogger from '../logger'
-import future, { IFuture } from 'fp-future'
-import { Layer, Realm, Candidate, RootDaoState, ServerConnectionStatus, PingResult } from './types'
+import future from 'fp-future'
+import {
+  Layer,
+  Realm,
+  Candidate,
+  RootDaoState,
+  ServerConnectionStatus,
+  PingResult,
+  HealthStatus,
+  LayerBasedCandidate,
+  IslandsBasedCandidate
+} from './types'
 import { RootState } from 'shared/store/rootTypes'
 import { Store } from 'redux'
 import {
@@ -20,10 +30,13 @@ import { CatalystNode } from '../types'
 import { zip } from './utils/zip'
 import { realmToString } from './utils/realmToString'
 import { PIN_CATALYST } from 'config'
-const qs: any = require('query-string')
+import * as qs from 'query-string'
+
+const DEFAULT_TIMEOUT = 5000
 
 const v = 50
-const score = ({ usersCount, maxUsers = 50 }: Layer) => {
+// See here: https://github.com/decentraland/explorer/pull/604
+const layerScore = ({ usersCount, maxUsers = 50 }: Layer) => {
   if (usersCount === 0) {
     return -v
   }
@@ -37,6 +50,17 @@ const score = ({ usersCount, maxUsers = 50 }: Layer) => {
   const period = Math.PI / (0.67 * (maxUsers ? maxUsers : 50))
 
   return v + v * Math.cos(phase + period * usersCount)
+}
+
+// When using islands, the more users the better. We also prioritize these over the old lighthouses.
+// That means the score starts over 100 for any candidate that has at least 1 user.
+// We should probably revamp score altogether
+const islandsScore = (usersCount: number) => {
+  if (usersCount === 0) {
+    return -v + 1 // if we have two empty realms, one old and one new, we prioritize the new one
+  }
+
+  return 100 + usersCount
 }
 
 export function ping(url: string, timeoutMs: number = 5000): Promise<PingResult> {
@@ -112,7 +136,43 @@ export async function fetchCatalystRealms(nodesEndpoint: string | undefined): Pr
     throw new Error('no nodes are available in the DAO for the current network')
   }
 
-  return fetchCatalystStatuses(nodes)
+  const responses = await Promise.all(
+    nodes.map(async (node) => ({ ...node, health: await fetchPeerHealthStatus(node) }))
+  )
+
+  const healthyNodes = responses.filter((node) => isPeerHealthy(node.health))
+
+  return fetchCatalystStatuses(healthyNodes)
+}
+
+async function fetchPeerHealthStatus(node: CatalystNode) {
+  const abortController = new AbortController()
+
+  const signal = abortController.signal
+  try {
+    setTimeout(() => {
+      abortController.abort()
+    }, DEFAULT_TIMEOUT)
+
+    const response = await (await fetch(peerHealthStatusUrl(node.domain), { signal })).json()
+
+    return response
+  } catch {
+    return {}
+  }
+}
+
+export function isPeerHealthy(peerStatus: Record<string, HealthStatus>) {
+  return (
+    Object.keys(peerStatus).length > 0 &&
+    !Object.keys(peerStatus).some((server) => {
+      return peerStatus[server] !== HealthStatus.HEALTHY
+    })
+  )
+}
+
+export function peerHealthStatusUrl(domain: string) {
+  return `${domain}/lambdas/health`
 }
 
 export function commsStatusUrl(domain: string, includeLayers: boolean = false) {
@@ -127,22 +187,50 @@ export async function fetchCatalystStatuses(nodes: { domain: string }[]) {
   const results: PingResult[] = await Promise.all(nodes.map((node) => ping(commsStatusUrl(node.domain, true))))
 
   return zip(nodes, results).reduce(
-    (union: Candidate[], [{ domain }, { elapsed, result, status }]: [CatalystNode, PingResult]) =>
-      status === ServerConnectionStatus.OK
-        ? union.concat(
-            result!.layers.map((layer) => ({
-              catalystName: result!.name,
-              domain,
-              status,
-              elapsed: elapsed!,
-              layer,
-              score: score(layer),
-              lighthouseVersion: result!.version
-            }))
-          )
-        : union,
+    (union: Candidate[], [{ domain }, { elapsed, result, status }]: [CatalystNode, PingResult]) => {
+      function buildBaseCandidate() {
+        return {
+          catalystName: result!.name,
+          domain,
+          status: status!,
+          elapsed: elapsed!,
+          lighthouseVersion: result!.version,
+          catalystVersion: result!.env.catalystVersion
+        }
+      }
+
+      function buildLayerCandidate(layer: Layer): LayerBasedCandidate {
+        return {
+          ...buildBaseCandidate(),
+          layer,
+          type: 'layer-based',
+          score: layerScore(layer)
+        }
+      }
+
+      function buildIslandsCandidate(usersCount: number): IslandsBasedCandidate {
+        return {
+          ...buildBaseCandidate(),
+          usersCount,
+          type: 'islands-based',
+          score: islandsScore(usersCount)
+        }
+      }
+
+      if (status === ServerConnectionStatus.OK) {
+        if (result!.layers) {
+          return [...union, ...result!.layers.map((layer) => buildLayerCandidate(layer))]
+        } else {
+          return [...union, buildIslandsCandidate(result!.usersCount!)]
+        }
+      } else return union
+    },
     new Array<Candidate>()
   )
+}
+
+function candidateUsers(candidate: Candidate) {
+  return candidate.type === 'layer-based' ? candidate.layer.usersCount : candidate.usersCount
 }
 
 export function pickCatalystRealm(candidates: Candidate[]): Realm {
@@ -153,12 +241,16 @@ export function pickCatalystRealm(candidates: Candidate[]): Realm {
       usersByDomain[it.domain] = 0
     }
 
-    usersByDomain[it.domain] += it.layer.usersCount
+    usersByDomain[it.domain] += candidateUsers(it)
   })
 
   const sorted = candidates
     .filter((it) => it)
-    .filter((it) => it.status === ServerConnectionStatus.OK && it.layer.usersCount < it.layer.maxUsers)
+    .filter(
+      (it) =>
+        it.status === ServerConnectionStatus.OK &&
+        (it.type === 'islands-based' || it.layer.usersCount < it.layer.maxUsers)
+    )
     .sort((c1, c2) => {
       const elapsedDiff = c1.elapsed - c2.elapsed
       const usersDiff = usersByDomain[c1.domain] - usersByDomain[c2.domain]
@@ -167,10 +259,10 @@ export function pickCatalystRealm(candidates: Candidate[]): Realm {
       return Math.abs(elapsedDiff) > 1500
         ? elapsedDiff // If the latency difference is greater than 1500, we consider that as the main factor
         : scoreDiff !== 0
-        ? scoreDiff // If there's score difference, we consider that
-        : usersDiff !== 0
-        ? usersDiff // If the score is the same (as when they are empty)
-        : elapsedDiff // If the candidates have the same score by users, we consider the latency again
+          ? scoreDiff // If there's score difference, we consider that
+          : usersDiff !== 0
+            ? usersDiff // If the score is the same (as when they are empty)
+            : elapsedDiff // If the candidates have the same score by users, we consider the latency again
     })
 
   if (sorted.length === 0 && candidates.length > 0) {
@@ -180,18 +272,14 @@ export function pickCatalystRealm(candidates: Candidate[]): Realm {
   return candidateToRealm(sorted[0])
 }
 
-export function candidatesFetched(): IFuture<void> {
-  const result: IFuture<void> = future()
-
+export async function candidatesFetched(): Promise<void> {
   const store: Store<RootState> = (window as any)['globalStore']
 
-  const fetched = areCandidatesFetched(store.getState())
-  if (fetched) {
-    result.resolve()
-    return result
+  if (areCandidatesFetched(store.getState())) {
+    return
   }
 
-  new Promise((resolve) => {
+  return new Promise((resolve) => {
     const unsubscribe = store.subscribe(() => {
       const fetched = areCandidatesFetched(store.getState())
       if (fetched) {
@@ -200,24 +288,18 @@ export function candidatesFetched(): IFuture<void> {
       }
     })
   })
-    .then(() => result.resolve())
-    .catch((e) => result.reject(e))
-
-  return result
 }
 
 export async function realmInitialized(): Promise<void> {
   const store: Store<RootState> = (window as any)['globalStore']
 
-  const initialized = isRealmInitialized(store.getState())
-  if (initialized) {
-    return Promise.resolve()
+  if (isRealmInitialized(store.getState())) {
+    return
   }
 
   return new Promise((resolve) => {
     const unsubscribe = store.subscribe(() => {
-      const initialized = isRealmInitialized(store.getState())
-      if (initialized) {
+      if (isRealmInitialized(store.getState())) {
         unsubscribe()
         return resolve()
       }
@@ -228,21 +310,35 @@ export async function realmInitialized(): Promise<void> {
 export function getRealmFromString(realmString: string, candidates: Candidate[]) {
   const parts = realmString.split('-')
   if (parts.length === 2) {
-    return realmFor(parts[0], parts[1], candidates)
+    return realmForLayer(parts[0], parts[1], candidates)
+  } else {
+    return realmFor(parts[0], candidates)
   }
 }
 
 function candidateToRealm(candidate: Candidate) {
-  return {
+  const realm: Realm = {
     catalystName: candidate.catalystName,
     domain: candidate.domain,
-    layer: candidate.layer.name,
     lighthouseVersion: candidate.lighthouseVersion
   }
+
+  if (candidate.type === 'layer-based') {
+    realm.layer = candidate.layer.name
+  }
+
+  return realm
 }
 
-function realmFor(name: string, layer: string, candidates: Candidate[]): Realm | undefined {
-  const candidate = candidates.find((it) => it && it.catalystName === name && it.layer.name === layer)
+function realmForLayer(name: string, layer: string, candidates: Candidate[]): Realm | undefined {
+  const candidate = candidates.find(
+    (it) => it?.type === 'layer-based' && it.catalystName === name && it.layer.name === layer
+  )
+  return candidate ? candidateToRealm(candidate) : undefined
+}
+
+function realmFor(name: string, candidates: Candidate[]): Realm | undefined {
+  const candidate = candidates.find((it) => it?.type === 'islands-based' && it.catalystName === name)
   return candidate ? candidateToRealm(candidate) : undefined
 }
 
@@ -261,6 +357,8 @@ export function changeRealm(realmString: string) {
 }
 
 export async function changeToCrowdedRealm(): Promise<[boolean, Realm]> {
+  // TODO: Add support for changing to crowded realm in islands based candidates. Or remove this functionality
+
   const store: Store<RootState> = (window as any)['globalStore']
 
   const candidates = await refreshCandidatesStatuses()
@@ -276,13 +374,18 @@ export async function changeToCrowdedRealm(): Promise<[boolean, Realm]> {
 
   candidates
     .filter(
-      (it) => it.layer.usersParcels && it.layer.usersParcels.length > 0 && it.layer.usersCount < it.layer.maxUsers
+      (it) =>
+        it.type === 'layer-based' &&
+        it.layer.usersParcels &&
+        it.layer.usersParcels.length > 0 &&
+        it.layer.usersCount < it.layer.maxUsers
     )
     .forEach((candidate) => {
-      if (candidate.layer.usersParcels) {
-        let closePeople = countParcelsCloseTo(currentPosition, candidate.layer.usersParcels, 4)
+      const layer = (candidate as LayerBasedCandidate).layer
+      if (layer.usersParcels) {
+        let closePeople = countParcelsCloseTo(currentPosition, layer.usersParcels, 4)
         // If it is the realm of the player, we substract 1 to not count ourselves
-        if (candidate.catalystName === currentRealm.catalystName && candidate.layer.name === currentRealm.layer) {
+        if (candidate.catalystName === currentRealm.catalystName && layer.name === currentRealm.layer) {
           closePeople -= 1
         }
 

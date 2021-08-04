@@ -1,9 +1,9 @@
 import { Store } from 'redux'
 import { EntityType, Hashing } from 'dcl-catalyst-commons'
-import { CatalystClient, ContentClient, DeploymentBuilder, DeploymentData } from 'dcl-catalyst-client'
+import { CatalystClient, ContentClient, DeploymentData } from 'dcl-catalyst-client'
 import { call, throttle, put, select, takeEvery } from 'redux-saga/effects'
 
-import { getServerConfigurations, PREVIEW, ethereumConfigurations, RESET_TUTORIAL, ALL_WEARABLES } from 'config'
+import { getServerConfigurations, PREVIEW, ethereumConfigurations, RESET_TUTORIAL } from 'config'
 
 import defaultLogger from 'shared/logger'
 import {
@@ -43,7 +43,7 @@ import { WORLD_EXPLORER } from '../../config/index'
 import { backupProfile } from 'shared/profiles/generateRandomUserProfile'
 import { getResourcesURL } from '../location'
 import { takeLatestById } from './utils/takeLatestById'
-import { UnityInterfaceContainer } from 'unity-interface/dcl'
+import { RendererInterfaces } from 'unity-interface/dcl'
 import { StoreContainer } from '../store/rootTypes'
 import { getCurrentUserId, getCurrentIdentity, getCurrentNetwork } from 'shared/session/selectors'
 import { USER_AUTHENTIFIED } from 'shared/session/actions'
@@ -53,26 +53,17 @@ import { RootState } from 'shared/store/rootTypes'
 import { requestLocalProfileToPeers, updateCommsUser } from 'shared/comms'
 import { ensureRealmInitialized } from 'shared/dao/sagas'
 import { ensureRenderer } from 'shared/renderer/sagas'
-import {
-  ensureBaseCatalogs,
-  fetchInventoryItemsByAddress,
-  mapUrnToLegacyId,
-  mapUrnsToLegacyId
-} from 'shared/catalogs/sagas'
 import { base64ToBlob } from 'atomicHelpers/base64ToBlob'
 import { LocalProfilesRepository } from './LocalProfilesRepository'
 import { getProfileType } from './getProfileType'
-import { ReportFatalError } from 'shared/loading/ReportFatalError'
+import { BringDownClientAndShowError, ErrorContext, ReportFatalError } from 'shared/loading/ReportFatalError'
 import { UNEXPECTED_ERROR } from 'shared/loading/types'
 import { fetchParcelsWithAccess } from './fetchLand'
 import { ParcelsWithAccess } from 'decentraland-ecs/src'
-import { WearableId } from 'shared/types'
-import { isFeatureEnabled } from 'shared/meta/selectors'
-import { FeatureFlags } from 'shared/meta/types'
 
 const toBuffer = require('blob-to-buffer')
 
-declare const globalThis: Window & UnityInterfaceContainer & StoreContainer
+declare const globalThis: Window & RendererInterfaces & StoreContainer
 
 const concatenatedActionTypeUserId = (action: { type: string; payload: { userId: string } }) =>
   action.type + action.payload.userId
@@ -123,7 +114,8 @@ function* initialProfileLoad() {
   try {
     profile = yield ProfileAsPromise(userId, undefined, getProfileType(identity))
   } catch (e) {
-    ReportFatalError(UNEXPECTED_ERROR)
+    ReportFatalError(e, ErrorContext.KERNEL_INIT, { userId: userId })
+    BringDownClientAndShowError(UNEXPECTED_ERROR)
     throw e
   }
 
@@ -220,7 +212,8 @@ export function* handleFetchProfile(action: ProfileRequestAction): any {
         }
       }
     } catch (error) {
-      defaultLogger.warn(`Error requesting profile for ${userId}, `, error)
+      // we throw here because it seems this is an unrecoverable error
+      throw new Error(`Error requesting profile for ${userId}: ${error}`)
     }
 
     if (currentId === userId) {
@@ -242,8 +235,8 @@ export function* handleFetchProfile(action: ProfileRequestAction): any {
       profile = yield call(generateRandomUserProfile, userId)
     }
   } else {
-    const baseUrl = yield call(getResourcesURL)
-    profile = yield call(backupProfile, baseUrl + '/default-profile/snapshots', userId)
+    const snapshotUrl = getResourcesURL('default-profile/snapshots')
+    profile = yield call(backupProfile, snapshotUrl, userId)
   }
 
   if (currentId === userId) {
@@ -254,19 +247,6 @@ export function* handleFetchProfile(action: ProfileRequestAction): any {
   yield populateFaceIfNecessary(profile, '128')
 
   const passport: Profile = yield call(processServerProfile, userId, profile)
-
-  const shouldUseV2: boolean = yield select(isFeatureEnabled, FeatureFlags.WEARABLES_V2, false)
-
-  if (!ALL_WEARABLES && WORLD_EXPLORER && !shouldUseV2) {
-    try {
-      const inventory: WearableId[] = yield call(fetchInventoryItemsByAddress, userId)
-      passport.avatar.wearables = passport.avatar.wearables.filter(
-        (wearableId) => wearableId.includes('base-avatars') || inventory.includes(wearableId)
-      )
-    } catch (e) {
-      defaultLogger.error(`Failed to fetch inventory to filter owned wearables`)
-    }
-  }
 
   yield put(profileSuccess(userId, passport, hasConnectedWeb3))
 }
@@ -312,32 +292,11 @@ function* populateFaceIfNecessary(profile: any, resolution: string) {
   }
 }
 
-export async function profileServerRequest(userId: string) {
+export function profileServerRequest(userId: string) {
   const state = globalThis.globalStore.getState()
   const catalystUrl = getCatalystServer(state)
-  const shouldUseV2: boolean = WORLD_EXPLORER && isFeatureEnabled(state, FeatureFlags.WEARABLES_V2, false)
-  let profile: any
-  if (shouldUseV2) {
-    const client = new CatalystClient(catalystUrl, 'EXPLORER')
-    profile = await client.fetchProfiles([userId]).then((profiles) => profiles[0] ?? { avatars: [] })
-  } else {
-    const response = await fetch(`${catalystUrl}/lambdas/profile/${userId}`)
-    profile = await response.json()
-  }
-  // These mappings are necessary because the renderer still has some hardcoded legacy ids. After the migration is successful and the flag is removed, the renderer can update the ids and we can remove this translation
-  const avatar = profile?.avatars[0]?.avatar
-  if (avatar?.bodyShape) {
-    const mappedBodyShape = await mapUrnToLegacyId(avatar.bodyShape)
-    if (mappedBodyShape) {
-      avatar.bodyShape = mappedBodyShape
-    }
-  }
-
-  if (avatar?.wearables) {
-    const mappedWearables = await mapUrnsToLegacyId(avatar.wearables)
-    avatar.wearables = mappedWearables
-  }
-  return profile
+  const client = new CatalystClient(catalystUrl, 'EXPLORER')
+  return client.fetchProfiles([userId]).then((profiles) => profiles[0] ?? { avatars: [] })
 }
 
 function* handleRandomAsSuccess(action: ProfileRandomAction): any {
@@ -369,7 +328,6 @@ function* submitProfileToRenderer(action: ProfileSuccessAction): any {
   }
 
   yield call(ensureRenderer)
-  yield call(ensureBaseCatalogs)
   if ((yield select(getCurrentUserId)) === action.payload.userId) {
     yield call(sendLoadProfile, profile)
   } else {
@@ -383,8 +341,6 @@ function* submitProfileToRenderer(action: ProfileSuccessAction): any {
 }
 
 function* sendLoadProfile(profile: Profile) {
-  yield call(ensureBaseCatalogs)
-
   const identity = yield select(getCurrentIdentity)
   const parcels: ParcelsWithAccess = !identity.hasConnectedWeb3 ? [] : yield fetchParcelsWithAccess(identity.address)
   const rendererFormat = profileToRendererFormat(profile, { identity, parcels })
@@ -506,14 +462,22 @@ async function deploy(
   contentFiles: Map<string, Buffer>,
   contentHashes: Map<string, string>
 ) {
-  // Build entity and group all files
-  const preparationData = await (contentFiles.size
-    ? DeploymentBuilder.buildEntity(EntityType.PROFILE, [identity.address], contentFiles, metadata)
-    : DeploymentBuilder.buildEntityWithoutNewFiles(EntityType.PROFILE, [identity.address], contentHashes, metadata))
-  // sign the entity id
-  const authChain = Authenticator.signPayload(identity, preparationData.entityId)
   // Build the client
   const catalyst = new ContentClient(url, 'explorer-kernel-profile')
+
+  const entityWithoutNewFilesPayload = {
+    type: EntityType.PROFILE,
+    pointers: [identity.address],
+    hashesByKey: contentHashes,
+    metadata
+  }
+
+  // Build entity and group all files
+  const preparationData = await (contentFiles.size
+    ? catalyst.buildEntity({ type: EntityType.PROFILE, pointers: [identity.address], files: contentFiles, metadata })
+    : catalyst.buildEntityWithoutNewFiles(entityWithoutNewFilesPayload))
+  // sign the entity id
+  const authChain = Authenticator.signPayload(identity, preparationData.entityId)
   // Build the deploy data
   const deployData: DeploymentData = { ...preparationData, authChain }
   // Deploy the actual entity

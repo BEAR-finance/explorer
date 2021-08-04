@@ -2,6 +2,7 @@
 export * from './ecs/Attachable'
 export * from './ecs/Engine'
 export * from './ecs/Component'
+export * from './ecs/ComponentGroup'
 export * from './ecs/Entity'
 export * from './ecs/IEntity'
 export * from './ecs/Task'
@@ -11,6 +12,7 @@ export * from './ecs/UIValue'
 export * from './ecs/EventManager'
 export * from './ecs/UserActions'
 
+import { _initEventObservables } from './decentraland/Events'
 import { DecentralandSynchronizationSystem } from './decentraland/Implementation'
 
 // ECS INITIALIZATION
@@ -35,6 +37,7 @@ import { DecentralandInterface } from './decentraland/Types'
 declare let dcl: DecentralandInterface | void
 if (typeof dcl !== 'undefined') {
   engine.addSystem(new DecentralandSynchronizationSystem(dcl), Infinity)
+  _initEventObservables(dcl)
 }
 
 import { uuidEventSystem, pointerEventSystem, raycastEventSystem } from './decentraland/Systems'
@@ -48,12 +51,12 @@ engine.addSystem(pointerEventSystem)
 engine.addSystem(raycastEventSystem)
 
 // DECENTRALAND DEPENDENCIES
+export * from './decentraland/math'
 export * from './decentraland/Types'
 export * from './decentraland/Components'
 export * from './decentraland/Systems'
 export * from './decentraland/Events'
 export * from './decentraland/Camera'
-export * from './decentraland/math'
 export * from './decentraland/AnimationState'
 export * from './decentraland/Input'
 export * from './decentraland/Audio'

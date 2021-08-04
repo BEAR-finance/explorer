@@ -124,7 +124,11 @@ async function compile() {
   }
 
   // First time around, emit all files
-  await emitFile(cfg.fileNames[0], services, cfg)
+  const diagnostics = await emitFile(cfg.fileNames[0], services, cfg)
+
+  if (!WATCH && diagnostics.length) {
+    throw new Error(`! Error: compilation finished with ${diagnostics.length} errors`)
+  }
 }
 
 function watchFile(fileName: string, services: ts.LanguageService, files: FileMap, cfg: ProjectConfig) {
@@ -184,7 +188,7 @@ async function emitFile(fileName: string, services: ts.LanguageService, cfg: Pro
     console.log(`> processing ${fileName.replace(ts.sys.getCurrentDirectory(), '')} failed`)
   }
 
-  logErrors(services)
+  const diagnostics = logErrors(services)
 
   type OutFile = {
     readonly path: string
@@ -335,6 +339,8 @@ async function emitFile(fileName: string, services: ts.LanguageService, cfg: Pro
   if (WATCH) {
     console.log('\nThe compiler is watching file changes...\n')
   }
+
+  return diagnostics
 }
 
 function logErrors(services: ts.LanguageService) {
@@ -345,6 +351,8 @@ function logErrors(services: ts.LanguageService) {
     .concat(services.getProgram()!.getSyntacticDiagnostics())
 
   allDiagnostics.forEach(printDiagnostic)
+
+  return allDiagnostics
 }
 
 function getConfiguration(packageJson: PackageJson | null, sceneJson: SceneJson | null): ProjectConfig {
@@ -471,14 +479,19 @@ function getConfiguration(packageJson: PackageJson | null, sceneJson: SceneJson 
     if (resolved) {
       try {
         const libPackageJson = JSON.parse(ts.sys.readFile(resolved)!)
+        const decentralandLibrary = libPackageJson.decentralandLibrary
 
         let main: string | null = null
         let typings: string | null = null
 
+        if (!decentralandLibrary) {
+          throw new Error(`field "decentralandLibrary" is missing in package.json`)
+        }
+
         if (!libPackageJson.main) {
           throw new Error(`field "main" is missing in package.json`)
         } else {
-          main = resolve(dirname(resolved), libPackageJson.main)
+          main = resolve(dirname(resolved), decentralandLibrary.main || libPackageJson.main)
           if (!ts.sys.fileExists(main)) {
             throw new Error(`main file ${main} not found`)
           }
@@ -487,14 +500,10 @@ function getConfiguration(packageJson: PackageJson | null, sceneJson: SceneJson 
         if (!libPackageJson.typings) {
           throw new Error(`field "typings" is missing in package.json`)
         } else {
-          typings = resolve(dirname(resolved), libPackageJson.typings)
+          typings = resolve(dirname(resolved), decentralandLibrary.typings || libPackageJson.typings)
           if (!ts.sys.fileExists(typings)) {
             throw new Error(`typings file ${typings} not found`)
           }
-        }
-
-        if (!libPackageJson.decentralandLibrary) {
-          throw new Error(`field "decentralandLibrary" is missing in package.json`)
         }
 
         libs.push({ main, typings, name: libPackageJson.name })

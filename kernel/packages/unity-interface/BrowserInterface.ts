@@ -1,19 +1,31 @@
 import { uuid } from 'decentraland-ecs/src'
 import { sendPublicChatMessage } from 'shared/comms'
 import { AvatarMessageType } from 'shared/comms/interface/types'
-import { avatarMessageObservable } from 'shared/comms/peers'
+import { avatarMessageObservable, localProfileUUID } from 'shared/comms/peers'
 import { hasConnectedWeb3 } from 'shared/profiles/selectors'
 import { TeleportController } from 'shared/world/TeleportController'
 import { reportScenesAroundParcel } from 'shared/atlas/actions'
-import { decentralandConfigurations, ethereumConfigurations, playerConfigurations, WORLD_EXPLORER } from 'config'
+import { getCurrentIdentity, getCurrentUserId } from 'shared/session/selectors'
+import {
+  decentralandConfigurations,
+  ethereumConfigurations,
+  parcelLimits,
+  playerConfigurations,
+  WORLD_EXPLORER
+} from 'config'
 import { Quaternion, ReadOnlyQuaternion, ReadOnlyVector3, Vector3 } from '../decentraland-ecs/src/decentraland/math'
 import { IEventNames } from '../decentraland-ecs/src/decentraland/Types'
-import { sceneLifeCycleObservable } from '../decentraland-loader/lifecycle/controllers/scene'
-import { identifyEmail, queueTrackingEvent } from 'shared/analytics'
-import { aborted } from 'shared/loading/ReportFatalError'
+import { renderDistanceObservable, sceneLifeCycleObservable } from '../decentraland-loader/lifecycle/controllers/scene'
+import { identifyEmail, trackEvent } from 'shared/analytics'
+import {
+  aborted,
+  BringDownClientAndShowError,
+  ErrorContext,
+  ReportFatalErrorWithUnityPayload
+} from 'shared/loading/ReportFatalError'
 import { defaultLogger } from 'shared/logger'
 import { profileRequest, saveProfileRequest } from 'shared/profiles/actions'
-import { Avatar } from 'shared/profiles/types'
+import { Avatar, ProfileType } from 'shared/profiles/types'
 import {
   ChatMessage,
   FriendshipUpdateStatusMessage,
@@ -21,8 +33,13 @@ import {
   WorldPosition,
   LoadableParcelScene
 } from 'shared/types'
-import { getSceneWorkerBySceneID, setNewParcelScene, stopParcelSceneWorker } from 'shared/world/parcelSceneManager'
-import { getPerformanceInfo, getRawPerformanceInfo } from 'shared/session/getPerformanceInfo'
+import {
+  getSceneWorkerBySceneID,
+  setNewParcelScene,
+  stopParcelSceneWorker,
+  loadedSceneWorkers
+} from 'shared/world/parcelSceneManager'
+import { getPerformanceInfo } from 'shared/session/getPerformanceInfo'
 import { positionObservable } from 'shared/world/positionThings'
 import { renderStateObservable } from 'shared/world/worldState'
 import { sendMessage } from 'shared/chat/actions'
@@ -33,9 +50,9 @@ import { fetchENSOwner, getAppNetwork } from 'shared/web3'
 import { updateStatusMessage } from 'shared/loading/actions'
 import { blockPlayers, mutePlayers, unblockPlayers, unmutePlayers } from 'shared/social/actions'
 import { setAudioStream } from './audioStream'
-import { changeSignUpStage, logout, redirectToSignUp, signUpCancel, signUpSetProfile } from 'shared/session/actions'
-import { getIdentity, hasWallet } from 'shared/session'
-import { StoreContainer } from 'shared/store/rootTypes'
+import { logout, redirectToSignUp, signUp, signUpCancel, signupForm, signUpSetProfile } from 'shared/session/actions'
+import { authenticateWhenItsReady, getIdentity, hasWallet } from 'shared/session'
+import { RootState, StoreContainer } from 'shared/store/rootTypes'
 import { unityInterface } from './UnityInterface'
 import { setDelightedSurveyEnabled } from './delightedSurvey'
 import { IFuture } from 'fp-future'
@@ -44,19 +61,24 @@ import { GIFProcessor } from 'gif-processor/processor'
 import { setVoiceChatRecording, setVoicePolicy, setVoiceVolume, toggleVoiceChatRecording } from 'shared/comms/actions'
 import { getERC20Balance } from 'shared/ethereum/EthereumService'
 import { StatefulWorker } from 'shared/world/StatefulWorker'
-import { getCurrentUserId } from 'shared/session/selectors'
 import { ensureFriendProfile } from 'shared/friends/ensureFriendProfile'
-import Html from 'shared/Html'
 import { reloadScene } from 'decentraland-loader/lifecycle/utils/reloadScene'
 import { isGuest } from '../shared/ethereum/provider'
 import { killPortableExperienceScene } from './portableExperiencesUtils'
 import { wearablesRequest } from 'shared/catalogs/actions'
 import { WearablesRequestFilters } from 'shared/catalogs/types'
 import { fetchENSOwnerProfile } from './fetchENSOwnerProfile'
+import { ProfileAsPromise } from 'shared/profiles/ProfileAsPromise'
+import { profileToRendererFormat } from 'shared/profiles/transformations/profileToRendererFormat'
+import { AVATAR_LOADING_ERROR } from 'shared/loading/types'
+import { unpublishSceneByCoords } from 'shared/apis/SceneStateStorageController/unpublishScene'
+import { ProviderType } from 'decentraland-connect'
+import { BuilderServerAPIManager } from 'shared/apis/SceneStateStorageController/BuilderServerAPIManager'
+import { Store } from 'redux'
+import { areCandidatesFetched } from 'shared/dao/selectors'
+import { realmToString } from 'shared/dao/utils/realmToString'
 
-declare const DCL: any
-
-declare const globalThis: StoreContainer
+declare const globalThis: StoreContainer & { gifProcessor?: GIFProcessor }
 export let futures: Record<string, IFuture<any>> = {}
 
 // ** TODO - move to friends related file - moliva - 15/07/2020
@@ -74,8 +96,34 @@ const positionEvent = {
   immediate: false // By default the renderer lerps avatars position
 }
 
+type SystemInfoPayload = {
+  graphicsDeviceName: string
+  graphicsDeviceVersion: string
+  graphicsMemorySize: number
+  processorType: string
+  processorCount: number
+  systemMemorySize: number
+}
+
 export class BrowserInterface {
   private lastBalanceOfMana: number = -1
+
+  // visitor pattern? anyone?
+  /**
+   * This is the only method that should be called publically in this class.
+   * It dispatches "renderer messages" to the correct handlers.
+   *
+   * It has a fallback that doesn't fail to support future versions of renderers
+   * and independant workflows for both teams.
+   */
+  public handleUnityMessage(type: string, message: any) {
+    if (type in this) {
+      // tslint:disable-next-line:semicolon
+      ;(this as any)[type](message)
+    } else {
+      defaultLogger.info(`Unknown message (did you forget to add ${type} to unity-interface/dcl.ts?)`, message)
+    }
+  }
 
   /** Triggered when the camera moves */
   public ReportPosition(data: {
@@ -116,21 +164,34 @@ export class BrowserInterface {
     }
   }
 
+  public AllScenesEvent(data: { eventType: string; payload: any }) {
+    for (const [_key, scene] of loadedSceneWorkers) {
+      scene.emit(data.eventType as IEventNames, data.payload)
+    }
+  }
+
   public OpenWebURL(data: { url: string }) {
     const newWindow: any = window.open(data.url, '_blank', 'noopener,noreferrer')
     if (newWindow != null) newWindow.opener = null
   }
 
-  public PerformanceHiccupReport(data: { hiccupsInThousandFrames: number; hiccupsTime: number; totalTime: number }) {
-    queueTrackingEvent('hiccup report', data)
+  public PerformanceReport(data: {
+    samples: string
+    fpsIsCapped: boolean
+    hiccupsInThousandFrames: number
+    hiccupsTime: number
+    totalTime: number
+  }) {
+    const perfReport = getPerformanceInfo(data)
+    trackEvent('performance report', perfReport)
   }
 
-  public PerformanceReport(data: { samples: string; fpsIsCapped: boolean }) {
-    const perfReport = getPerformanceInfo(data)
-    queueTrackingEvent('performance report', perfReport)
+  public SystemInfoReport(data: SystemInfoPayload) {
+    trackEvent('system info report', data)
+  }
 
-    const rawPerfReport = getRawPerformanceInfo(data)
-    queueTrackingEvent('raw perf report', rawPerfReport)
+  public CrashPayloadResponse(data: { payload: any }) {
+    unityInterface.crashPayloadResponseObservable.notifyObservers(JSON.stringify(data))
   }
 
   public PreloadFinished(data: { sceneId: string }) {
@@ -145,16 +206,24 @@ export class BrowserInterface {
       }
     }
 
-    queueTrackingEvent(data.name, properties)
+    trackEvent(data.name, properties)
   }
 
   public TriggerExpression(data: { id: string; timestamp: number }) {
     avatarMessageObservable.notifyObservers({
       type: AvatarMessageType.USER_EXPRESSION,
-      uuid: uuid(),
+      uuid: localProfileUUID || 'non-local-profile-uuid',
       expressionId: data.id,
       timestamp: data.timestamp
     })
+
+    this.AllScenesEvent({
+      eventType: 'playerExpression',
+      payload: {
+        expressionId: data.id
+      }
+    })
+
     const messageId = uuid()
     const body = `␐${data.id} ${data.timestamp}`
 
@@ -174,6 +243,7 @@ export class BrowserInterface {
   }
 
   public GoTo(data: { x: number; y: number }) {
+    notifyStatusThroughChat(`Jumped to ${data.x},${data.y}!`)
     TeleportController.goTo(data.x, data.y)
   }
 
@@ -216,10 +286,23 @@ export class BrowserInterface {
       globalThis.globalStore.dispatch(saveProfileRequest(update))
     } else {
       globalThis.globalStore.dispatch(signUpSetProfile(update))
-      globalThis.globalStore.dispatch(changeSignUpStage('passport'))
-      Html.switchGameContainer(false)
-      unityInterface.DeactivateRendering()
     }
+  }
+
+  public SendAuthentication(data: { rendererAuthenticationType: string }) {
+    const providerType: ProviderType | null = Object.values(ProviderType).includes(
+      data.rendererAuthenticationType as ProviderType
+    )
+      ? (data.rendererAuthenticationType as ProviderType)
+      : null
+
+    authenticateWhenItsReady(providerType)
+  }
+
+  public SendPassport(passport: { name: string; email: string }) {
+    unityInterface.DeactivateRendering()
+    globalThis.globalStore.dispatch(signupForm(passport.name, passport.email))
+    globalThis.globalStore.dispatch(signUp())
   }
 
   public RequestOwnProfileUpdate() {
@@ -296,6 +379,14 @@ export class BrowserInterface {
 
   public SetDelightedSurveyEnabled(data: { enabled: boolean }) {
     setDelightedSurveyEnabled(data.enabled)
+  }
+
+  public SetScenesLoadRadius(data: { newRadius: number }) {
+    parcelLimits.visibleRadius = Math.round(data.newRadius)
+
+    renderDistanceObservable.notifyObservers({
+      distanceInParcels: parcelLimits.visibleRadius
+    })
   }
 
   public ReportScene(sceneId: string) {
@@ -397,12 +488,14 @@ export class BrowserInterface {
       realm: { serverName, layer }
     } = data
 
-    const realmString = serverName + '-' + layer
+    const realmString = realmToString({ serverName, layer })
 
     notifyStatusThroughChat(`Jumping to ${realmString} at ${x},${y}...`)
 
     const future = candidatesFetched()
-    if (future.isPending) {
+
+    const store: Store<RootState> = (window as any)['globalStore']
+    if (!areCandidatesFetched(store.getState())) {
       notifyStatusThroughChat(`Waiting while realms are initialized, this may take a while...`)
     }
 
@@ -413,17 +506,21 @@ export class BrowserInterface {
     if (realm) {
       catalystRealmConnected().then(
         () => {
-          TeleportController.goTo(x, y, `Jumped to ${x},${y} in realm ${realmString}!`)
+          const successMessage = `Jumped to ${x},${y} in realm ${realmString}!`
+          notifyStatusThroughChat(successMessage)
+          unityInterface.ConnectionToRealmSuccess(data)
+          TeleportController.goTo(x, y, successMessage)
         },
         (e) => {
           const cause = e === 'realm-full' ? ' The requested realm is full.' : ''
           notifyStatusThroughChat('Could not join realm.' + cause)
-
+          unityInterface.ConnectionToRealmFailed(data)
           defaultLogger.error('Error joining realm', e)
         }
       )
     } else {
-      notifyStatusThroughChat(`Couldn't find realm ${realmString}`)
+      notifyStatusThroughChat(`Couldn't find realm ${realmString}.`)
+      unityInterface.ConnectionToRealmFailed(data)
     }
   }
 
@@ -445,16 +542,16 @@ export class BrowserInterface {
   }
 
   async RequestGIFProcessor(data: { imageSource: string; id: string; isWebGL1: boolean }) {
-    if (!DCL.gifProcessor) {
-      DCL.gifProcessor = new GIFProcessor(unityInterface.gameInstance, unityInterface, data.isWebGL1)
+    if (!globalThis.gifProcessor) {
+      globalThis.gifProcessor = new GIFProcessor(unityInterface.gameInstance, unityInterface, data.isWebGL1)
     }
 
-    DCL.gifProcessor.ProcessGIF(data)
+    globalThis.gifProcessor.ProcessGIF(data)
   }
 
   public DeleteGIF(data: { value: string }) {
-    if (DCL.gifProcessor) {
-      DCL.gifProcessor.DeleteGIF(data.value)
+    if (globalThis.gifProcessor) {
+      globalThis.gifProcessor.DeleteGIF(data.value)
     }
   }
 
@@ -484,6 +581,18 @@ export class BrowserInterface {
     await killPortableExperienceScene(data.portableExperienceId)
   }
 
+  public RequestBIWCatalogHeader() {
+    const store: Store<RootState> = globalThis['globalStore']
+    const identity = getCurrentIdentity(store.getState())
+    if (!identity) {
+      let emptyHeader: Record<string, string> = {}
+      unityInterface.SendBuilderCatalogHeaders(emptyHeader)
+    } else {
+      const headers = BuilderServerAPIManager.authorize(identity, 'get', '/assetpacks')
+      unityInterface.SendBuilderCatalogHeaders(headers)
+    }
+  }
+
   public RequestWearables(data: {
     filters: {
       ownedByUser: string | null
@@ -499,6 +608,26 @@ export class BrowserInterface {
       collectionIds: this.arrayCleanup(filters.collectionIds)
     }
     globalThis.globalStore.dispatch(wearablesRequest(newFilters, context))
+  }
+
+  public RequestUserProfile(userIdPayload: { value: string }) {
+    ProfileAsPromise(userIdPayload.value, undefined, ProfileType.DEPLOYED)
+      .then((profile) => unityInterface.AddUserProfileToCatalog(profileToRendererFormat(profile)))
+      .catch((error) => defaultLogger.error(`error fetching profile ${userIdPayload.value} ${error}`))
+  }
+
+  public ReportAvatarFatalError() {
+    // TODO(Brian): Add more parameters?
+    ReportFatalErrorWithUnityPayload(new Error(AVATAR_LOADING_ERROR), ErrorContext.RENDERER_AVATARS)
+    BringDownClientAndShowError(AVATAR_LOADING_ERROR)
+  }
+
+  public UnpublishScene(data: { coordinates: string }) {
+    unpublishSceneByCoords(data.coordinates).catch((error) => defaultLogger.log(error))
+  }
+
+  public async NotifyStatusThroughChat(data: { value: string }) {
+    notifyStatusThroughChat(data.value)
   }
 
   private arrayCleanup<T>(array: T[] | null | undefined): T[] | undefined {

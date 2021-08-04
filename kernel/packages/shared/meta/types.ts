@@ -9,6 +9,7 @@ export type MetaConfiguration = {
   explorer: {
     minBuildNumber: number
     useUnityIndexedDbCache: boolean
+    assetBundlesFetchUrl: string
   }
   servers: {
     added: string[]
@@ -16,9 +17,19 @@ export type MetaConfiguration = {
     contentWhitelist: string[]
     catalystsNodesEndpoint?: string
   }
+  bannedUsers: BannedUsers
+  synapseUrl: string
   world: WorldConfig
   comms: CommsConfig
+  minCatalystVersion?: string
   featureFlags?: Record<string, boolean>
+}
+
+export type BannedUsers = Record<string, Ban[]>
+
+export type Ban = {
+  type: "VOICE_CHAT_AND_CHAT" // For now we only handle one ban type
+  expiration: number // Timestamp
 }
 
 export type WorldConfig = {
@@ -26,6 +37,7 @@ export type WorldConfig = {
   renderProfile?: RenderProfile
   messageOfTheDay?: MessageOfTheDayConfig | null
   messageOfTheDayInit?: boolean
+  enableNewTutorialCamera?: boolean
 }
 
 export type MessageOfTheDayConfig = {
@@ -60,5 +72,7 @@ export type CommsConfig = {
 }
 
 export enum FeatureFlags {
-  WEARABLES_V2 = 'wearables_v2'
+  QUESTS = 'quests',
+  BUILDER_IN_WORLD = 'builder_in_world',
+  AVATAR_LODS = 'avatar_lods'
 }

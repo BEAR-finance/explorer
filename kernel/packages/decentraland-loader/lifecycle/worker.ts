@@ -10,7 +10,7 @@ import { ILand, InstancedSpawnPoint } from 'shared/types'
 import { SceneDataDownloadManager, TileIdPair } from './controllers/download'
 import { ParcelLifeCycleController } from './controllers/parcel'
 import { PositionLifecycleController } from './controllers/position'
-import { SceneLifeCycleController, SceneLifeCycleStatusReport } from './controllers/scene'
+import { NewDrawingDistanceReport, SceneLifeCycleController, SceneLifeCycleStatusReport } from './controllers/scene'
 import { Adapter } from './lib/adapter'
 
 const connector = new Adapter(WebWorkerTransport(self as any))
@@ -40,25 +40,21 @@ let downloadManager: SceneDataDownloadManager
     (options: {
       contentServer: string
       catalystServer: string
-      metaContentService: string
       contentServerBundles: string
       rootUrl: string
       lineOfSightRadius: number
-      secureRadius: number
       emptyScenes: boolean
       worldConfig: WorldConfig
     }) => {
       downloadManager = new SceneDataDownloadManager({
         contentServer: options.contentServer,
         catalystServer: options.catalystServer,
-        metaContentService: options.metaContentService,
         contentServerBundles: options.contentServerBundles,
         worldConfig: options.worldConfig,
         rootUrl: options.rootUrl
       })
       parcelController = new ParcelLifeCycleController({
-        lineOfSightRadius: options.lineOfSightRadius,
-        secureRadius: options.secureRadius
+        lineOfSightRadius: options.lineOfSightRadius
       })
       sceneController = new SceneLifeCycleController({ downloadManager, enabledEmpty: options.emptyScenes })
       positionController = new PositionLifecycleController(downloadManager, parcelController, sceneController)
@@ -118,6 +114,15 @@ let downloadManager: SceneDataDownloadManager
 
       connector.on('Scene.status', (data: SceneLifeCycleStatusReport) => {
         sceneController.reportStatus(data.sceneId, data.status)
+      })
+
+      connector.on('SetScenesLoadRadius', (data: NewDrawingDistanceReport) => {
+        const parcels = parcelController.setLineOfSightRadius(data.distanceInParcels)
+        positionController.updateSightedParcels(parcels)
+      })
+
+      connector.on('Scene.Invalidate', (data: { sceneId: string }) => {
+        sceneController.invalidate(data.sceneId)
       })
     }
   )

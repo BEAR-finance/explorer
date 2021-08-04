@@ -25,13 +25,26 @@ export function ensureServerFormat(profile: Profile): ServerFormatProfile {
   return {
     ...profile,
     avatar: {
-      bodyShape: avatar.bodyShape,
+      bodyShape: mapLegacyIdToUrn(avatar.bodyShape), // These mappings from legacy id are here just in case they still have the legacy id in local storage
       snapshots: avatar.snapshots,
       eyes: { color: eyes },
       hair: { color: hair },
       skin: { color: skin },
-      wearables: avatar.wearables
+      wearables: avatar.wearables.map(mapLegacyIdToUrn)
     }
+  }
+}
+
+function mapLegacyIdToUrn(wearableId: WearableId): WearableId {
+  if (!wearableId.startsWith('dcl://')) {
+    return wearableId
+  }
+  if (wearableId.startsWith('dcl://base-avatars')) {
+    const name = wearableId.substring(wearableId.lastIndexOf('/') + 1)
+    return `urn:decentraland:off-chain:base-avatars:${name}`
+  } else {
+    const [collectionName, wearableName] = wearableId.replace('dcl://', '').split('/')
+    return `urn:decentraland:ethereum:collections-v1:${collectionName}:${wearableName}`
   }
 }
 

@@ -1,7 +1,7 @@
 import { takeEvery, put, select } from 'redux-saga/effects'
 import { PayloadAction } from 'typesafe-actions'
 import { Vector3Component } from 'atomicHelpers/landHelpers'
-import { UnityInterfaceContainer } from 'unity-interface/dcl'
+import { RendererInterfaces } from 'unity-interface/dcl'
 import {
   MESSAGE_RECEIVED,
   MessageReceived,
@@ -13,7 +13,7 @@ import {
 import { uuid } from 'atomicHelpers/math'
 import { ChatMessageType, ChatMessage } from 'shared/types'
 import { EXPERIENCE_STARTED } from 'shared/loading/types'
-import { queueTrackingEvent } from 'shared/analytics'
+import { trackEvent } from 'shared/analytics'
 import { sendPublicChatMessage } from 'shared/comms'
 import { peerMap, avatarMessageObservable } from 'shared/comms/peers'
 import { parseParcelPosition, worldToGrid } from 'atomicHelpers/parcelScenePositions'
@@ -21,7 +21,7 @@ import { TeleportController } from 'shared/world/TeleportController'
 import { notifyStatusThroughChat } from 'shared/comms/chat'
 import defaultLogger from 'shared/logger'
 import { catalystRealmConnected, changeRealm, changeToCrowdedRealm } from 'shared/dao'
-import { isValidExpression, expressionExplainer, validExpressions } from 'shared/apis/expressionExplainer'
+import { isValidExpression, validExpressions } from 'shared/apis/expressionExplainer'
 import { RootState, StoreContainer } from 'shared/store/rootTypes'
 import { SHOW_FPS_COUNTER } from 'config'
 import { AvatarMessage, AvatarMessageType } from 'shared/comms/interface/types'
@@ -31,8 +31,9 @@ import { isFriend } from 'shared/friends/selectors'
 import { fetchHotScenes } from 'shared/social/hotScenes'
 import { getCurrentUserId } from 'shared/session/selectors'
 import { blockPlayers, mutePlayers, unblockPlayers, unmutePlayers } from 'shared/social/actions'
+import { realmToString } from 'shared/dao/utils/realmToString'
 
-declare const globalThis: UnityInterfaceContainer & StoreContainer
+declare const globalThis: RendererInterfaces & StoreContainer
 
 interface IChatCommand {
   name: string
@@ -84,12 +85,12 @@ function* trackEvents(action: PayloadAction<MessageEvent, ChatMessage>) {
   const { type, payload } = action
   switch (type) {
     case MESSAGE_RECEIVED: {
-      queueTrackingEvent('Chat message received', { length: payload.body.length })
+      trackEvent('Chat message received', { length: payload.body.length })
       break
     }
     case SEND_MESSAGE: {
       const { messageId, body } = payload
-      queueTrackingEvent('Send chat message', {
+      trackEvent('Send chat message', {
         messageId,
         length: body.length
       })
@@ -110,6 +111,10 @@ function* handleSendMessage(action: SendMessage) {
   // Check if message is a command
   if (message[0] === '/') {
     entry = handleChatCommand(message)
+
+    if (entry && entry.body.length === 0) { // Command is found but has no feedback message
+      return
+    }
 
     // If no such command was found, provide some feedback
     if (!entry) {
@@ -222,7 +227,7 @@ function initChatCommands() {
         ([changed, realm]) => {
           if (changed) {
             notifyStatusThroughChat(
-              `Found a crowded realm to join. Welcome to the realm ${realm.catalystName}-${realm.layer}!`
+              `Found a crowded realm to join. Welcome to the realm ${realmToString(realm)}!`
             )
           } else {
             notifyStatusThroughChat(`Already on most crowded realm for location. Nothing changed.`)
@@ -238,12 +243,12 @@ function initChatCommands() {
       const realm = changeRealm(realmString)
 
       if (realm) {
-        response = `Changing to Realm ${realm.catalystName}-${realm.layer}...`
+        response = `Changing to Realm ${realmToString(realm)}...`
         // TODO: This status should be shown in the chat window
         catalystRealmConnected().then(
           () =>
             notifyStatusThroughChat(
-              `Changed realm successfuly. Welcome to the realm ${realm.catalystName}-${realm.layer}!`
+              `Changed realm successfuly. Welcome to the realm ${realmToString(realm)}!`
             ),
           (e) => {
             const cause = e === 'realm-full' ? ' The requested realm is full.' : ''
@@ -339,7 +344,7 @@ function initChatCommands() {
         messageType: ChatMessageType.SYSTEM,
         sender: 'Decentraland',
         timestamp: Date.now(),
-        body: expressionExplainer[expression]
+        body: ""
       }
     }
   )
@@ -483,12 +488,11 @@ function initChatCommands() {
         let body = ''
         $.slice(0, 5).forEach((sceneInfo) => {
           const count = sceneInfo.realms.reduce((a, b) => a + b.usersCount, 0)
-          body += `${count} ${count > 1 ? 'users' : 'user'} @ ${
-            sceneInfo.name.length < 20 ? sceneInfo.name : sceneInfo.name.substring(0, 20) + '...'
-          } ${sceneInfo.baseCoords.x},${sceneInfo.baseCoords.y} ${sceneInfo.realms.reduce(
-            (a, b) => a + `\n\t realm: ${b.serverName}-${b.layer} users: ${b.usersCount}`,
-            ''
-          )}\n`
+          body += `${count} ${count > 1 ? 'users' : 'user'} @ ${sceneInfo.name.length < 20 ? sceneInfo.name : sceneInfo.name.substring(0, 20) + '...'
+            } ${sceneInfo.baseCoords.x},${sceneInfo.baseCoords.y} ${sceneInfo.realms.reduce(
+              (a, b) => a + `\n\t realm: ${realmToString(b)} users: ${b.usersCount}`,
+              ''
+            )}\n`
         })
         notifyStatusThroughChat(body)
       },

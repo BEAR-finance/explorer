@@ -1,30 +1,35 @@
-import React, { useState } from "react";
-import { ProviderType } from "decentraland-connect/dist/types"
-import { WalletSelector } from "./wallet/WalletSelector";
-import { LoginHeader } from "./LoginHeader";
-import { Spinner } from "../common/Spinner";
-import { Avatars } from "../common/Avatars";
-import "./EthLogin.css";
+import React, { useState } from 'react'
+import { ProviderType } from 'decentraland-connect/dist/types'
+import { WalletSelector } from './wallet/WalletSelector'
+import { LoginHeader } from './LoginHeader'
+import { Spinner } from '../common/Spinner'
+import { Avatars } from '../common/Avatars'
+import { track } from '../../utils'
+import './EthLogin.css'
 
 export interface EthLoginProps {
-  loading: boolean;
-  availableProviders: ProviderType[];
-  onLogin: (provider: ProviderType | null) => void;
+  availableProviders: ProviderType[]
+  onLogin: (provider: ProviderType | null) => void
+  signing: boolean
 }
 
 export const EthLogin: React.FC<EthLoginProps> = (props) => {
-  const [showWalletSelector, setShowWalletSelector] = useState(false);
-  const hasWallet = !!(props.availableProviders && props.availableProviders.includes(ProviderType.INJECTED))
-  const isLoading = props.loading || showWalletSelector;
+  const [showWalletSelector, setShowWalletSelector] = useState(false)
 
   function handlePlay() {
-    setShowWalletSelector(true);
+    track('open_login_popup')
+    setShowWalletSelector(true)
+  }
+
+  function handleLogin(provider: ProviderType | null) {
+    track('click_login_button', { provider_type: provider || 'guest' })
+    if (props.onLogin) {
+      props.onLogin(provider)
+    }
   }
 
   function handlePlayAsGuest() {
-    if (props.onLogin) {
-      props.onLogin(null);
-    }
+    handleLogin(null)
   }
 
   return (
@@ -32,12 +37,13 @@ export const EthLogin: React.FC<EthLoginProps> = (props) => {
       <LoginHeader />
       <Avatars />
       <div id="eth-login-confirmation-wrapper">
-        {isLoading && <Spinner />}
-        {!isLoading && (
+        {props.signing && <Spinner />}
+        {!props.signing && (
           <React.Fragment>
             <button disabled className="eth-login-confirm-button" onClick={handlePlay}>
               Play
             </button>
+<<<<<<< HEAD
             {!hasWallet && (
               <button
                 disabled
@@ -47,16 +53,21 @@ export const EthLogin: React.FC<EthLoginProps> = (props) => {
                 Enter as Guest
               </button>
             )}
+=======
+            <button className="eth-login-guest-button" onClick={handlePlayAsGuest}>
+              Play as Guest
+            </button>
+>>>>>>> 7f19988295bc26bb94346a9a4f9c5a27e5ee74a4
           </React.Fragment>
         )}
       </div>
       <WalletSelector
         open={showWalletSelector}
-        loading={props.loading}
-        onLogin={props.onLogin}
+        loading={props.signing}
+        onLogin={handleLogin}
         availableProviders={props.availableProviders}
         onCancel={() => setShowWalletSelector(false)}
       />
     </div>
-  );
-};
+  )
+}

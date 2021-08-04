@@ -4,13 +4,18 @@ import { EnvironmentData } from 'shared/types'
 import { Store } from 'redux'
 import { RootState } from 'shared/store/rootTypes'
 import { getRealm } from 'shared/dao/selectors'
-import { PREVIEW } from 'config'
+import { getServerConfigurations, PREVIEW } from 'config'
 
 type EnvironmentRealm = {
   domain: string
   layer: string
   serverName: string
   displayName: string
+}
+
+type ExplorerConfiguration = {
+  clientUri: string
+  configurations: Record<string, string | number | boolean>
 }
 
 declare const window: any
@@ -48,9 +53,22 @@ export class EnvironmentAPI extends ExposableAPI {
     const { domain, layer, catalystName: serverName } = realm
     return {
       domain,
-      layer,
+      layer: layer ?? '', // We shouldn't send undefined because it would break contract
       serverName,
       displayName: `${serverName}-${layer}`
+    }
+  }
+
+  /**
+   * Returns explorer configuration and environment information
+   */
+  @exposeMethod
+  async getExplorerConfiguration(): Promise<ExplorerConfiguration> {
+    return {
+      clientUri: location.href,
+      configurations: {
+        questsServerUrl: getServerConfigurations().questsUrl
+      }
     }
   }
 }
